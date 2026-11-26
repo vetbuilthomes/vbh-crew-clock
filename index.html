@@ -536,7 +536,8 @@
     }
     var WARN = { not_found: 'That row is not one of your crew’s.', posted: 'Already on a bill; it cannot change.',
                  locked: 'Approved rows are locked. Unapprove it first.', reason_required: 'Type a reason for the change.',
-                 bad_time: 'Clock out has to be after clock in, and the shift under 24 hours.', unknown_op: 'Not done.' };
+                 bad_time: 'Clock out has to be after clock in, not in the future, and the shift under 24 hours.',
+                 not_open: 'They are not clocked in any more.', unknown_op: 'Not done.' };
     function flagsHtml(f) {
       if (!f) return '';
       return '<div class="mflags">' + f.split(/\s*[;,]\s*/).filter(Boolean).map(function(x) {
@@ -570,7 +571,8 @@
           h += '</div></div>';
         });
         p.open.forEach(function(o) {
-          h += '<div class="mrow open"><div class="mmain"><div><b>' + esc(o.job) + '</b> ' + esc(o.jobName) + '</div><div class="meta">' + esc(o.day) + ' ' + esc(o.inTime) + ' – now · ' + fmtH(o.hours) + ' h</div>' + flagsHtml(o.flags) + '</div></div>';
+          h += '<div class="mrow open"><div class="mmain"><div><b>' + esc(o.job) + '</b> ' + esc(o.jobName) + '</div><div class="meta">' + esc(o.day) + ' ' + esc(o.inTime) + ' – now · ' + fmtH(o.hours) + ' h</div>' + flagsHtml(o.flags) + '</div>' +
+            '<div class="macts"><button type="button" class="mb ok" data-close="' + esc(o.token) + '">Close shift</button></div></div>';
         });
         if (!p.rows.length && !p.open.length) h += '<div class="empty" style="padding:6px 0">No hours this week.</div>';
         h += '</div>';
@@ -593,6 +595,29 @@
         if (v.warn) toast(WARN[v.warn] || 'Not done.', true); else toast(okMsg || 'Saved');
         return v;
       }).catch(function() { mbusy = false; toast('Not saved, try again', true); });
+    }
+    // A shift someone forgot to clock out of: the real clock-out time and a reason (v2026-11-26.13).
+    function closeSheetFor(token) {
+      var x = null;
+      V.weeks.forEach(function(w) { w.people.forEach(function(p) { p.open.forEach(function(o) { if (o.token === token) x = { o: o, p: p }; }); }); });
+      if (!x) return;
+      var o = x.o;
+      $('sheet').innerHTML = '<div id="closeSheet"><h2>Close shift: ' + esc(x.p.name) + '</h2><div class="meta">Clocked in ' + esc(o.day) + ' ' + esc(o.inTime) +
+        ' on job ' + esc(o.job) + ' ' + esc(o.jobName) + ', still open (' + fmtH(o.hours) + ' h).</div>' +
+        '<label class="fl">Real clock-out time<input type="datetime-local" id="cOut" value="' + esc(o.nowEdit) + '" min="' + esc(o.inEdit) + '"></label>' +
+        '<label class="fl">Reason (required)<textarea id="cReason" rows="2" placeholder="e.g. forgot to clock out, left site at 3:30 per text"></textarea></label>' +
+        '<div class="meta">It is saved as a pending row flagged Edited and closed by manager; approve it as usual.</div>' +
+        '<button type="button" class="btn in" id="cSave">Save</button><button type="button" class="btn grey" id="cCancel">Cancel</button></div>';
+      $('modal').className = 'modal show';
+      $('cCancel').onclick = closeSheet;
+      $('cSave').onclick = function() {
+        var reason = $('cReason').value.trim();
+        if (reason.length < 3) { toast(WARN.reason_required, true); $('cReason').focus(); return; }
+        this.disabled = true; this.textContent = 'Saving…';
+        mact({ op: 'closeShift', token: token, outAt: $('cOut').value, reason: reason }, 'Shift closed').then(function(v) {
+          if (v && !v.warn) closeSheet(); else { var b = $('cSave'); if (b) { b.disabled = false; b.textContent = 'Save'; } }
+        });
+      };
     }
     function editSheet(n) {
       var x = findRow(n); if (!x) return;
@@ -624,6 +649,7 @@
       if (b.hasAttribute('data-unapprove')) { b.disabled = true; mact({ op: 'unapprove', row: Number(b.getAttribute('data-unapprove')) }, 'Back to pending'); return; }
       if (b.hasAttribute('data-approve-week')) { b.disabled = true; b.textContent = 'Approving…'; mact({ op: 'approveWeek', token: b.getAttribute('data-approve-week'), week: V.weeks[WK].mon }, 'Week approved'); return; }
       if (b.hasAttribute('data-edit')) { editSheet(Number(b.getAttribute('data-edit'))); return; }
+      if (b.hasAttribute('data-close')) { closeSheetFor(b.getAttribute('data-close')); return; }
     });
     window.MANAGER_MODE = true;
     mget().then(function(v) { V = v; mrender(); })

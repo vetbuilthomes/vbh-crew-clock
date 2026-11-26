@@ -364,7 +364,8 @@
     busy = true;
     if (btn) { btn.disabled = true; btn.textContent = t('saving'); }
     body.gps = g;
-    if (body.jobNumber) body.pick = body.jobNumber === AUTO ? 'auto' : 'manual';
+    // auto: the page pre-selected this job (within 300 m) and the person did not choose another.
+    if (body.jobNumber) body.pick = !manualPick && body.jobNumber === AUTO ? 'auto' : 'manual';
     apiPost(body).then(function(s) {
       busy = false; picked = null; manualPick = false; window._q = '';
       closeSheet();
@@ -451,8 +452,10 @@
     if (!b || busy) return;
     if (b.hasAttribute('data-lang')) { setLang(b.getAttribute('data-lang')); return; }
     if (b.hasAttribute('data-job')) {
-      picked = jobByNumber(b.getAttribute('data-job'));
-      manualPick = true;
+      var num = b.getAttribute('data-job');
+      // Tapping the job that was already pre-selected for you keeps it "auto".
+      if (!(picked && picked.number === num && !manualPick)) manualPick = true;
+      picked = jobByNumber(num);
       refreshLists();
       return;
     }

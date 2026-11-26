@@ -76,6 +76,31 @@
   .toast.show { opacity: 1; }
   .msg { padding: 48px 20px; text-align: center; font-size: 21px; }
   .foot { text-align: center; color: #888; font-size: 13px; margin-top: 20px; }
+  /* manager view (?m=) */
+  .tabs { display: flex; gap: 8px; margin: 10px 0; }
+  .tab { flex: 1; font-size: 17px; padding: 10px; min-height: 56px; border: 2px solid #1f3a5f; background: #fff; color: #1f3a5f; border-radius: 10px; font-family: inherit; }
+  .tab.on { background: #1f3a5f; color: #fff; font-weight: bold; }
+  .tab small { font-size: 13px; font-weight: normal; }
+  .phead { display: flex; justify-content: space-between; align-items: flex-start; }
+  .pname { font-size: 20px; }
+  .btn.small { font-size: 18px; padding: 12px; min-height: 52px; }
+  h3.day { font-size: 15px; color: #1f3a5f; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+  .mrow { display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; }
+  .mrow.open { background: #fdecea; padding: 10px 8px; border-radius: 8px; }
+  .mmain { flex: 1; min-width: 0; font-size: 16px; }
+  .macts { display: flex; flex-direction: column; gap: 6px; }
+  .mb { font-size: 15px; padding: 8px 10px; min-height: 44px; min-width: 96px; border: 2px solid #1f3a5f; background: #fff; color: #1f3a5f; border-radius: 8px; font-family: inherit; }
+  .mb.ok { background: #2e7d32; border-color: #2e7d32; color: #fff; font-weight: bold; }
+  .mflags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .mflags .red { background: #fdecea; color: #b3261e; border: 1px solid #b3261e; border-radius: 6px; padding: 1px 6px; font-size: 13px; font-weight: bold; }
+  .mflags .edited { background: #fff3cd; color: #6b4000; border: 1px solid #b26a00; border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+  .st { font-size: 13px; margin-top: 4px; font-weight: bold; }
+  .st-pending { color: #777; }
+  .st-approved { color: #2e7d32; }
+  .st-posted { color: #1f3a5f; }
+  .otx { color: #b26a00; font-weight: bold; }
+  .fl { display: block; font-size: 16px; margin: 12px 0 0; }
+  .fl input, .fl textarea { display: block; width: 100%; font-size: 18px; padding: 10px; margin-top: 4px; border: 2px solid #999; border-radius: 8px; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -307,7 +332,14 @@
   function inLabel() { return esc(t('clockIn')) + (picked ? ': ' + esc(picked.number) : ''); }
 
   function flagsText(f) {
-    return f.split(',').map(function(x) { x = x.trim();
+    return f.split(/s*[;,]s*/).filter(Boolean).map(function(x) { x = x.trim();
+      if (lang() === 'es') {
+        var m1 = x.match(/^far from job ((.+))$/), m2 = x.match(/^clocked out (.+) from job$/);
+        if (m1) return 'lejos del trabajo (' + m1[1] + ')';
+        if (m2) return 'salida a ' + m2[1] + ' del trabajo';
+        if (x === 'distance unknown') return 'distancia desconocida';
+        if (x === 'Edited') return 'Editado';
+      }
       return x === 'no GPS' ? t('noGps') : x === 'long shift' ? t('flagLong') : x === 'lunch capped' ? t('flagLunch') : x; }).join(', ');
   }
   // Hours since clock-in, counted from the server's clock so the phone's clock does not matter.
@@ -479,11 +511,124 @@
   }
   // Fresh state when the page comes back to the front (another phone, or a long gap).
   document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible' && STATE && !busy && $('modal').className === 'modal') load(false);
+    if (!MGR && document.visibilityState === 'visible' && STATE && !busy && $('modal').className === 'modal') load(false);
   });
+  // ?m=<token> is the manager view (second script below); the crew clock does not start.
+  var MGR = !!(Q.get('m') || '').trim();
   document.documentElement.lang = lang();
-  if (T) startGeo();
-  load(true);
+  if (!MGR) { if (T) startGeo(); load(true); }
+</script>
+<script>
+  // ---------------- MANAGER VIEW (?m=<token>), v2026-11-26.3, English only ----------------
+  // The crew whose Approver is this manager: this week and last week, fix a time
+  // (reason required), approve a row or a whole week, unapprove before the bill posts.
+  (function() {
+    var MT = (Q.get('m') || '').trim();
+    if (!MT) return;
+    var V = null, WK = 1, mbusy = false;    // WK 0 this week, 1 last week (the week to approve on Monday)
+    function mget() {
+      return fetch(API + '?api=1&m=' + encodeURIComponent(MT) + '&_=' + Date.now(), { credentials: 'omit', redirect: 'follow' }).then(done);
+    }
+    function mpost(body) {
+      body.action = 'mgr'; body.m = MT;
+      return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body), credentials: 'omit', redirect: 'follow' }).then(done);
+    }
+    var WARN = { not_found: 'That row is not one of your crew’s.', posted: 'Already on a bill; it cannot change.',
+                 locked: 'Approved rows are locked. Unapprove it first.', reason_required: 'Type a reason for the change.',
+                 bad_time: 'Clock out has to be after clock in, and the shift under 24 hours.', unknown_op: 'Not done.' };
+    function flagsHtml(f) {
+      if (!f) return '';
+      return '<div class="mflags">' + f.split(/\s*[;,]\s*/).filter(Boolean).map(function(x) {
+        return '<span class="' + (x === 'Edited' ? 'edited' : 'red') + '">' + esc(x) + '</span>'; }).join('') + '</div>';
+    }
+    function mrender() {
+      if (!V) return;
+      document.title = 'VBH Crew Hours';
+      if (V.invalid) { $('app').innerHTML = '<header><h1>VBH Crew Hours</h1></header><div class="msg" id="invalid">Link not valid.</div>'; return; }
+      var w = V.weeks[WK];
+      var h = '<header><div style="flex:1"><h1>VBH Crew Hours</h1><div class="sub">' + esc(V.manager) + '</div></div></header><main>';
+      h += '<div class="tabs">' + V.weeks.map(function(x, i) {
+        return '<button type="button" class="tab' + (i === WK ? ' on' : '') + '" data-wk="' + i + '">' + esc(x.label) + '<br><small>' + esc(x.title) + '</small></button>'; }).join('') + '</div>';
+      if (!w.people.length) h += '<div class="card empty">No crew members list you as their approver.</div>';
+      w.people.forEach(function(p) {
+        h += '<div class="card person" data-person="' + esc(p.token) + '"><div class="phead"><div><b class="pname">' + esc(p.name) + '</b><div class="meta">Total <b>' + fmtH(p.totals.hours) +
+          ' h</b> · Regular ' + fmtH(p.totals.reg) + ' · <span class="' + (p.totals.ot > 0 ? 'otx' : '') + '">OT ' + fmtH(p.totals.ot) + '</span></div></div></div>';
+        if (p.pending) h += '<button type="button" class="btn in small" data-approve-week="' + esc(p.token) + '">Approve all (' + p.pending + ' pending)</button>';
+        var day = '';
+        p.rows.forEach(function(r) {
+          if (r.day !== day) { day = r.day; h += '<h3 class="day">' + esc(day) + '</h3>'; }
+          h += '<div class="mrow" data-row="' + r.row + '"><div class="mmain"><div><b>' + esc(r.job) + '</b> ' + esc(r.jobName) + '</div>' +
+            '<div class="meta">' + esc(r.inTime) + ' – ' + esc(r.outTime) + ' · <b>' + fmtH(r.hours) + ' h</b>' +
+            (r.reg != null && (r.status !== 'Pending') ? ' (' + fmtH(r.reg) + ' reg' + (r.ot ? ', <span class="otx">' + fmtH(r.ot) + ' OT</span>' : '') + ')' : '') + '</div>' +
+            flagsHtml(r.flags) +
+            '<div class="st st-' + r.status.toLowerCase() + '">' + esc(r.status) +
+            (r.status === 'Approved' ? ' by ' + esc(r.approvedBy) + ' ' + esc(r.approvedAt) : '') +
+            (r.status === 'Posted' ? ' · ' + esc(r.bill) : '') + '</div></div><div class="macts">';
+          if (r.status === 'Pending') h += '<button type="button" class="mb ok" data-approve="' + r.row + '">Approve</button><button type="button" class="mb" data-edit="' + r.row + '">Edit time</button>';
+          else if (r.status === 'Approved') h += '<button type="button" class="mb" data-unapprove="' + r.row + '">Unapprove</button>';
+          h += '</div></div>';
+        });
+        p.open.forEach(function(o) {
+          h += '<div class="mrow open"><div class="mmain"><div><b>' + esc(o.job) + '</b> ' + esc(o.jobName) + '</div><div class="meta">' + esc(o.day) + ' ' + esc(o.inTime) + ' – now · ' + fmtH(o.hours) + ' h</div>' + flagsHtml(o.flags) + '</div></div>';
+        });
+        if (!p.rows.length && !p.open.length) h += '<div class="empty" style="padding:6px 0">No hours this week.</div>';
+        h += '</div>';
+      });
+      h += '<div class="foot">' + esc(V.version || '') + '</div></main>';
+      $('app').innerHTML = h;
+    }
+    function findRow(n) {
+      var out = null;
+      V.weeks.forEach(function(w) { w.people.forEach(function(p) { p.rows.forEach(function(r) { if (r.row === n) out = { r: r, p: p }; }); }); });
+      return out;
+    }
+    function mact(body, okMsg) {
+      if (mbusy) return Promise.resolve();
+      mbusy = true;
+      return mpost(body).then(function(v) {
+        mbusy = false;
+        if (v.invalid) { V = v; mrender(); return; }
+        V = v; mrender();
+        if (v.warn) toast(WARN[v.warn] || 'Not done.', true); else toast(okMsg || 'Saved');
+        return v;
+      }).catch(function() { mbusy = false; toast('Not saved, try again', true); });
+    }
+    function editSheet(n) {
+      var x = findRow(n); if (!x) return;
+      var r = x.r;
+      $('sheet').innerHTML = '<div id="editSheet"><h2>Edit time: ' + esc(x.p.name) + '</h2><div class="meta">' + esc(r.day) + ' · job ' + esc(r.job) + ' ' + esc(r.jobName) + '</div>' +
+        '<label class="fl">Clock in<input type="datetime-local" id="eIn" value="' + esc(r.inEdit) + '"></label>' +
+        '<label class="fl">Clock out<input type="datetime-local" id="eOut" value="' + esc(r.outEdit) + '"></label>' +
+        '<label class="fl">Reason (required)<textarea id="eReason" rows="2" placeholder="e.g. forgot to clock out, left site at 3:30"></textarea></label>' +
+        '<div class="meta">The original times are kept in the Log tab and the row is flagged Edited.</div>' +
+        '<button type="button" class="btn in" id="eSave">Save</button><button type="button" class="btn grey" id="eCancel">Cancel</button></div>';
+      $('modal').className = 'modal show';
+      $('eCancel').onclick = closeSheet;
+      $('eSave').onclick = function() {
+        var reason = $('eReason').value.trim();
+        if (reason.length < 3) { toast(WARN.reason_required, true); $('eReason').focus(); return; }
+        var body = { op: 'edit', row: n, reason: reason };
+        if ($('eIn').value !== r.inEdit) body.inAt = $('eIn').value;
+        if ($('eOut').value !== r.outEdit) body.outAt = $('eOut').value;
+        if (!body.inAt && !body.outAt) { toast('Nothing changed.', true); return; }
+        this.disabled = true; this.textContent = 'Saving…';
+        mact(body, 'Time changed').then(function(v) { if (v && !v.warn) closeSheet(); else { var b = $('eSave'); if (b) { b.disabled = false; b.textContent = 'Save'; } } });
+      };
+    }
+    document.addEventListener('click', function(ev) {
+      var b = ev.target.closest && ev.target.closest('button');
+      if (!b || mbusy || !V) return;
+      if (b.hasAttribute('data-wk')) { WK = Number(b.getAttribute('data-wk')); mrender(); return; }
+      if (b.hasAttribute('data-approve')) { b.disabled = true; mact({ op: 'approve', row: Number(b.getAttribute('data-approve')) }, 'Approved'); return; }
+      if (b.hasAttribute('data-unapprove')) { b.disabled = true; mact({ op: 'unapprove', row: Number(b.getAttribute('data-unapprove')) }, 'Back to pending'); return; }
+      if (b.hasAttribute('data-approve-week')) { b.disabled = true; b.textContent = 'Approving…'; mact({ op: 'approveWeek', token: b.getAttribute('data-approve-week'), week: V.weeks[WK].mon }, 'Week approved'); return; }
+      if (b.hasAttribute('data-edit')) { editSheet(Number(b.getAttribute('data-edit'))); return; }
+    });
+    window.MANAGER_MODE = true;
+    mget().then(function(v) { V = v; mrender(); })
+      .catch(function() { $('app').innerHTML = '<div class="msg">Could not load. Check your signal and reload.</div>'; });
+  })();
 </script>
 </body>
 </html>

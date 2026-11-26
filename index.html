@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>VBH Crew Clock</title>
+<!--
+  VBH crew clock-in page. Source: Claude Projects/crew-clock/web/index.html,
+  published to GitHub Pages (repo vetbuilthomes/vbh-crew-clock) by
+  crew-clock/publish-page.sh. All data comes from the Apps Script JSON API
+  below; nothing about any person or job is in this file.
+  Mode: ?t=<token>   one crew member's clock (the token is the person; no login)
+-->
+<style>
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+         font-size: 18px; color: #1a1a1a; background: #f4f4f2; }
+  header { background: #1f3a5f; color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 20px; margin: 0; flex: 1; line-height: 1.25; }
+  header .sub { font-size: 15px; opacity: .9; }
+  .lang { display: flex; border: 2px solid rgba(255,255,255,.7); border-radius: 8px; overflow: hidden; }
+  .lang button { font-size: 15px; padding: 8px 12px; min-height: 40px; border: 0; background: transparent; color: #fff; }
+  .lang button.on { background: #fff; color: #1f3a5f; font-weight: bold; }
+  main { padding: 12px 12px 32px; max-width: 560px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin: 10px 0; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .status { font-size: 24px; font-weight: bold; }
+  .status.in { color: #2e7d32; }
+  .status.out { color: #555; }
+  .big { font-size: 19px; margin-top: 6px; line-height: 1.35; }
+  .meta { font-size: 16px; color: #555; margin-top: 4px; }
+  .total { font-size: 18px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e4e4e0; }
+  .banner { background: #fff3cd; border: 2px solid #b26a00; color: #6b4000; border-radius: 12px; padding: 14px; margin: 10px 0; font-size: 17px; }
+  .btn { display: block; width: 100%; font-size: 22px; font-weight: bold; padding: 18px; min-height: 64px; border: 0;
+         border-radius: 12px; margin-top: 12px; font-family: inherit; }
+  .btn.in { background: #2e7d32; color: #fff; }
+  .btn.out { background: #b3261e; color: #fff; }
+  .btn.sw { background: #fff; color: #1f3a5f; border: 3px solid #1f3a5f; }
+  .btn.grey { background: #e4e4e0; color: #1a1a1a; font-weight: normal; font-size: 19px; min-height: 56px; }
+  .btn:disabled { opacity: .45; }
+  .search { width: 100%; font-size: 19px; padding: 12px; border: 2px solid #999; border-radius: 10px; font-family: inherit; margin-top: 8px; }
+  .jobs { max-height: 50vh; overflow-y: auto; margin-top: 8px; border: 1px solid #e4e4e0; border-radius: 10px; }
+  .job { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font-size: 18px; padding: 12px 14px; min-height: 56px;
+         border: 0; border-bottom: 1px solid #eee; background: #fff; font-family: inherit; }
+  .job .num { font-weight: bold; color: #1f3a5f; flex: 0 0 64px; }
+  .job.sel { background: #e3efe4; outline: 3px solid #2e7d32; outline-offset: -3px; }
+  .job:last-child { border-bottom: 0; }
+  .empty { color: #777; padding: 14px; font-size: 16px; }
+  .shift { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 16px; }
+  .shift:last-child { border-bottom: 0; }
+  .shift .flag { color: #b26a00; font-size: 14px; }
+  h2 { font-size: 16px; color: #1f3a5f; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .toggle { display: flex; align-items: center; gap: 14px; padding: 12px 0; font-size: 19px; cursor: pointer; }
+  .toggle input { width: 28px; height: 28px; margin: 0; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px 42px; }
+  .chip { font-size: 17px; padding: 10px 14px; min-height: 44px; border: 2px solid #1f3a5f; background: #fff; color: #1f3a5f; border-radius: 22px; font-family: inherit; }
+  .chip.on { background: #1f3a5f; color: #fff; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  .modal.show { display: flex; }
+  .sheet { background: #fff; border-radius: 16px 16px 0 0; padding: 20px 16px 28px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+  .sheet h2 { font-size: 20px; text-transform: none; letter-spacing: 0; color: #1a1a1a; margin-bottom: 10px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #2e7d32; color: #fff;
+           padding: 12px 22px; border-radius: 24px; font-size: 18px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: 92vw; text-align: center; }
+  .toast.err { background: #b3261e; }
+  .toast.show { opacity: 1; }
+  .msg { padding: 48px 20px; text-align: center; font-size: 21px; }
+  .foot { text-align: center; color: #888; font-size: 13px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="msg" id="loading">Loading… / Cargando…</div></div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<script>
+  // Apps Script deployment (vetbuilthomes@gmail.com, "VBH Crew Clock"). Redeployed in
+  // place with clasp deploy -i, so this URL never changes. Set once by publish-page.sh's
+  // first run (see crew-clock/PROJECT.md).
+  var API = 'https://script.google.com/macros/s/AKfycbw3O4dwJNVsGJfzg09kPYVpXp8IH5Dm7foQUvT9XiGuPPq6wzgAutV16U2fkFPNfYfh/exec';
+  var Q = new URLSearchParams(location.search);
+  var T = (Q.get('t') || '').trim();
+  var LANG_KEY = 'vbhClockLang';
+  var STATE = null, busy = false, picked = null, pickMode = 'in', tick = null;
+
+  var S = {
+    en: { title: 'VBH Crew Clock', invalid: 'Link not valid, ask your PM', loadfail: 'Could not load. Check your signal and reload.',
+          clockedIn: 'Clocked IN', clockedOut: 'Clocked OUT', since: 'since', onJob: 'on', hoursSoFar: 'h so far',
+          today: 'Today', todayTotal: 'Today’s total', hours: 'h', noShifts: 'No shifts yet today.',
+          clockIn: 'Clock In', clockOut: 'Clock Out', switchJob: 'Switch Job', pickJob: 'Pick the job', search: 'Search job number or name',
+          noJobs: 'No job matches.', jobsErr: 'Job list unavailable. Try again in a minute.', cancel: 'Cancel', confirm: 'Confirm',
+          tookLunch: 'Took lunch', minutes: 'min', outOf: 'Clock out of', switchTo: 'Switch to', from: 'from',
+          gettingGps: 'Getting location…', saving: 'Saving…', saved: 'Saved', notSaved: 'Not saved, try again',
+          longShift: 'You have been clocked in for over {h} hours. Forgot to clock out? Clock out now and tell your PM.',
+          alreadyIn: 'You were already clocked in.', notIn: 'You were not clocked in.', unknownJob: 'That job is not on the list any more.',
+          sameJob: 'You are already on that job.', lunch: 'lunch', noGps: 'no GPS', flagLong: 'long shift', flagLunch: 'lunch capped' },
+    es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
+          clockedIn: 'Marcado ENTRADA', clockedOut: 'Marcado SALIDA', since: 'desde', onJob: 'en', hoursSoFar: 'h hasta ahora',
+          today: 'Hoy', todayTotal: 'Total de hoy', hours: 'h', noShifts: 'Sin turnos todavía hoy.',
+          clockIn: 'Marcar entrada', clockOut: 'Marcar salida', switchJob: 'Cambiar de trabajo', pickJob: 'Elige el trabajo', search: 'Busca número o nombre del trabajo',
+          noJobs: 'Ningún trabajo coincide.', jobsErr: 'Lista de trabajos no disponible. Intenta en un minuto.', cancel: 'Cancelar', confirm: 'Confirmar',
+          tookLunch: 'Tomé almuerzo', minutes: 'min', outOf: 'Marcar salida de', switchTo: 'Cambiar a', from: 'desde',
+          gettingGps: 'Obteniendo ubicación…', saving: 'Guardando…', saved: 'Guardado', notSaved: 'No guardado, intenta otra vez',
+          longShift: 'Llevas más de {h} horas marcado. ¿Olvidaste marcar salida? Marca salida ahora y avisa a tu PM.',
+          alreadyIn: 'Ya estabas marcado.', notIn: 'No estabas marcado.', unknownJob: 'Ese trabajo ya no está en la lista.',
+          sameJob: 'Ya estás en ese trabajo.', lunch: 'almuerzo', noGps: 'sin GPS', flagLong: 'turno largo', flagLunch: 'almuerzo ajustado' }
+  };
+  function lang() { try { return localStorage.getItem(LANG_KEY) === 'es' ? 'es' : 'en'; } catch (e) { return window._lang || 'en'; } }
+  function setLang(l) { window._lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
+  function t(k) { return S[lang()][k] || S.en[k] || k; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function $(id) { return document.getElementById(id); }
+  function fmtH(h) { return (Math.round(h * 100) / 100).toFixed(2).replace(/\.?0+$/, ''); }
+
+  // credentials:'omit' sends no Google cookies, so a phone signed into several
+  // Google accounts is served like an anonymous one. POST is text/plain: no CORS preflight.
+  function apiGet() {
+    return fetch(API + '?api=1&t=' + encodeURIComponent(T) + '&_=' + Date.now(), { credentials: 'omit', redirect: 'follow' }).then(done);
+  }
+  function apiPost(body) {
+    body.t = T;
+    return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body), credentials: 'omit', redirect: 'follow' }).then(done);
+  }
+  function done(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json().then(function(s) { if (s && s.error) throw new Error(s.error); return s; });
+  }
+
+  function toast(msg, err) {
+    var el = $('toast');
+    el.textContent = msg; el.className = 'toast show' + (err ? ' err' : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function() { el.className = 'toast' + (err ? ' err' : ''); }, err ? 3500 : 1500);
+  }
+
+  // GPS: ask once per tap, wait at most 8 s, send null when refused or unavailable.
+  function gps() {
+    return new Promise(function(resolve) {
+      if (!navigator.geolocation) return resolve(null);
+      var finished = false;
+      var timer = setTimeout(function() { if (!finished) { finished = true; resolve(null); } }, 8000);
+      navigator.geolocation.getCurrentPosition(function(p) {
+        if (finished) return; finished = true; clearTimeout(timer);
+        resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy });
+      }, function() { if (finished) return; finished = true; clearTimeout(timer); resolve(null); },
+      { enableHighAccuracy: true, timeout: 7500, maximumAge: 30000 });
+    });
+  }
+
+  // ---------------- render ----------------
+  function header() {
+    var l = lang();
+    return '<header><div style="flex:1"><h1>' + esc(t('title')) + '</h1>' +
+      (STATE && STATE.name ? '<div class="sub">' + esc(STATE.name) + '</div>' : '') + '</div>' +
+      '<div class="lang"><button type="button" data-lang="en" class="' + (l === 'en' ? 'on' : '') + '">EN</button>' +
+      '<button type="button" data-lang="es" class="' + (l === 'es' ? 'on' : '') + '">ES</button></div></header>';
+  }
+
+  function render() {
+    if (!STATE) return;
+    document.title = t('title');
+    if (STATE.invalid) {
+      $('app').innerHTML = header() + '<div class="msg" id="invalid">' + esc(t('invalid')) + '</div>';
+      return;
+    }
+    var o = STATE.open, h = header() + '<main>';
+    if (o && o.longShift) h += '<div class="banner" id="longShift">&#9888; ' + esc(t('longShift').replace('{h}', STATE.longShiftHours)) + '</div>';
+    h += '<div class="card">';
+    if (o) {
+      h += '<div class="status in" id="status">' + esc(t('clockedIn')) + '</div>' +
+        '<div class="big">' + esc(t('onJob')) + ' <b>' + esc(o.jobNumber) + '</b> ' + esc(o.jobName) + '</div>' +
+        '<div class="meta">' + esc(t('since')) + ' ' + esc(o.inTime) + (o.inDate !== STATE.today ? ' (' + esc(o.inDate) + ')' : '') +
+        ' · <span id="elapsed">' + fmtH(liveHours()) + '</span> ' + esc(t('hoursSoFar')) + '</div>';
+    } else {
+      h += '<div class="status out" id="status">' + esc(t('clockedOut')) + '</div>';
+    }
+    h += '<div class="total">' + esc(t('todayTotal')) + ': <b id="todayTotal">' + fmtH(liveTotal()) + ' ' + esc(t('hours')) + '</b></div></div>';
+    if (o) {
+      h += '<button type="button" class="btn out" id="btnOut">' + esc(t('clockOut')) + '</button>' +
+           '<button type="button" class="btn sw" id="btnSwitch">' + esc(t('switchJob')) + '</button>';
+    } else {
+      h += '<div class="card"><h2>' + esc(t('pickJob')) + '</h2>' + picker('in') + '</div>' +
+           '<button type="button" class="btn in" id="btnIn"' + (picked ? '' : ' disabled') + '>' + esc(t('clockIn')) +
+           (picked ? ': ' + esc(picked.number) : '') + '</button>';
+    }
+    h += '<div class="card"><h2>' + esc(t('today')) + '</h2>';
+    var sh = STATE.shifts || [];
+    if (!sh.length) h += '<div class="empty" style="padding:4px 0">' + esc(t('noShifts')) + '</div>';
+    sh.forEach(function(s) {
+      h += '<div class="shift"><div><b>' + esc(s.jobNumber) + '</b> ' + esc(s.jobName) + '<br><span class="meta">' + esc(s.inTime) + ' – ' + esc(s.outTime) +
+        (s.lunchMinutes ? ' · ' + s.lunchMinutes + ' ' + esc(t('minutes')) + ' ' + esc(t('lunch')) : '') + '</span>' +
+        (s.flags ? '<br><span class="flag">' + esc(flagsText(s.flags)) + '</span>' : '') + '</div><div><b>' + fmtH(s.hours) + ' ' + esc(t('hours')) + '</b></div></div>';
+    });
+    h += '</div><div class="foot">' + esc(STATE.version || '') + '</div></main>';
+    $('app').innerHTML = h;
+    var inp = $('jobSearch'); if (inp && window._q) { inp.value = window._q; }
+    clearInterval(tick);
+    if (o) tick = setInterval(function() {
+      var e = $('elapsed'), tt = $('todayTotal');
+      if (e) e.textContent = fmtH(liveHours());
+      if (tt) tt.textContent = fmtH(liveTotal()) + ' ' + t('hours');
+    }, 30000);
+  }
+
+  function flagsText(f) {
+    return f.split(',').map(function(x) { x = x.trim();
+      return x === 'no GPS' ? t('noGps') : x === 'long shift' ? t('flagLong') : x === 'lunch capped' ? t('flagLunch') : x; }).join(', ');
+  }
+  // Hours since clock-in, counted from the server's clock so the phone's clock does not matter.
+  function liveHours() {
+    if (!STATE.open) return 0;
+    var base = STATE.open.hours, drift = (Date.now() - STATE._receivedAt) / 3600000;
+    return base + Math.max(0, drift);
+  }
+  function liveTotal() { return (STATE.todayHours - (STATE.open ? STATE.open.hours : 0)) + liveHours(); }
+
+  function picker(mode) {
+    var q = (window._q || '').toLowerCase().trim();
+    var jobs = (STATE.jobs || []).filter(function(j) {
+      return !q || j.number.toLowerCase().indexOf(q) !== -1 || j.name.toLowerCase().indexOf(q) !== -1;
+    });
+    var h = '<input class="search" id="jobSearch" placeholder="' + esc(t('search')) + '" autocomplete="off" inputmode="search">' +
+      '<div class="jobs" id="jobs">';
+    if (STATE.jobsError && !(STATE.jobs || []).length) h += '<div class="empty">' + esc(t('jobsErr')) + '</div>';
+    else if (!jobs.length) h += '<div class="empty">' + esc(t('noJobs')) + '</div>';
+    jobs.slice(0, 200).forEach(function(j) {
+      var sel = picked && picked.number === j.number;
+      h += '<button type="button" class="job' + (sel ? ' sel' : '') + '" data-job="' + esc(j.number) + '">' +
+        '<span class="num">' + esc(j.number) + '</span><span>' + esc(j.name) + '</span></button>';
+    });
+    return h + '</div>';
+  }
+
+  // ---------------- actions ----------------
+  function act(body, btn, label) {
+    if (busy) return Promise.resolve();
+    busy = true;
+    var orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = t('gettingGps'); }
+    return gps().then(function(g) {
+      if (btn) btn.textContent = t('saving');
+      body.gps = g;
+      return apiPost(body);
+    }).then(function(s) {
+      busy = false; picked = null; window._q = '';
+      setState(s);
+      if (s.warn === 'already_in') toast(t('alreadyIn'), true);
+      else if (s.warn === 'not_in') toast(t('notIn'), true);
+      else if (s.warn === 'unknown_job') toast(t('unknownJob'), true);
+      else if (s.warn === 'same_job') toast(t('sameJob'), true);
+      else toast(label || t('saved'));
+    }).catch(function() {
+      busy = false;
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      toast(t('notSaved'), true);
+    });
+  }
+
+  function openOutSheet() {
+    var o = STATE.open, d = STATE.defaultLunchMinutes || 30;
+    $('sheet').innerHTML = '<h2>' + esc(t('outOf')) + ' ' + esc(o.jobNumber) + ' ' + esc(o.jobName) + '</h2>' +
+      '<div class="meta">' + esc(t('since')) + ' ' + esc(o.inTime) + ' · ' + fmtH(liveHours()) + ' ' + esc(t('hours')) + '</div>' +
+      '<label class="toggle"><input type="checkbox" id="lunch"> ' + esc(t('tookLunch')) + '</label>' +
+      '<div class="chips" id="chips" style="display:none">' + [15, 30, 45, 60].map(function(m) {
+        return '<button type="button" class="chip' + (m === d ? ' on' : '') + '" data-min="' + m + '">' + m + ' ' + esc(t('minutes')) + '</button>'; }).join('') + '</div>' +
+      '<button type="button" class="btn out" id="doOut">' + esc(t('clockOut')) + '</button>' +
+      '<button type="button" class="btn grey" id="doCancel">' + esc(t('cancel')) + '</button>';
+    $('modal').className = 'modal show';
+    $('lunch').onchange = function() { $('chips').style.display = this.checked ? 'flex' : 'none'; };
+    $('chips').onclick = function(ev) {
+      var b = ev.target.closest('button'); if (!b) return;
+      Array.prototype.forEach.call($('chips').children, function(c) { c.className = 'chip'; });
+      b.className = 'chip on';
+    };
+    $('doCancel').onclick = closeSheet;
+    $('doOut').onclick = function() {
+      var mins = 0;
+      if ($('lunch').checked) { var on = $('chips').querySelector('.on'); mins = on ? Number(on.getAttribute('data-min')) : d; }
+      var btn = this;
+      act({ action: 'out', lunchMinutes: mins }, btn).then(closeSheet);
+    };
+  }
+
+  function openSwitchSheet() {
+    picked = null; window._q = ''; pickMode = 'switch';
+    $('sheet').innerHTML = '<h2>' + esc(t('switchTo')) + '</h2>' + picker('switch') +
+      '<button type="button" class="btn sw" id="doSwitch" disabled>' + esc(t('switchJob')) + '</button>' +
+      '<button type="button" class="btn grey" id="doCancel">' + esc(t('cancel')) + '</button>';
+    $('modal').className = 'modal show';
+    $('doCancel').onclick = closeSheet;
+    $('doSwitch').onclick = function() {
+      if (!picked) return;
+      act({ action: 'switch', jobNumber: picked.number }, this).then(closeSheet);
+    };
+    setTimeout(function() { var i = $('jobSearch'); if (i) i.focus(); }, 50);
+  }
+
+  function closeSheet() { $('modal').className = 'modal'; $('sheet').innerHTML = ''; pickMode = 'in'; }
+
+  function setState(s) { STATE = s; STATE._receivedAt = Date.now(); render(); }
+
+  // ---------------- events ----------------
+  document.addEventListener('click', function(ev) {
+    var b = ev.target.closest && ev.target.closest('button');
+    if (!b || busy) return;
+    if (b.hasAttribute('data-lang')) { setLang(b.getAttribute('data-lang')); return; }
+    if (b.hasAttribute('data-job')) {
+      var num = b.getAttribute('data-job');
+      picked = (STATE.jobs || []).filter(function(j) { return j.number === num; })[0] || null;
+      if (pickMode === 'switch') {
+        Array.prototype.forEach.call(document.querySelectorAll('#sheet .job'), function(el) { el.className = 'job' + (el.getAttribute('data-job') === num ? ' sel' : ''); });
+        var ds = $('doSwitch'); if (ds) { ds.disabled = !picked; ds.textContent = t('switchJob') + (picked ? ': ' + picked.number : ''); }
+      } else render();
+      return;
+    }
+    if (b.id === 'btnIn' && picked) { act({ action: 'in', jobNumber: picked.number }, b); return; }
+    if (b.id === 'btnOut') { openOutSheet(); return; }
+    if (b.id === 'btnSwitch') { openSwitchSheet(); return; }
+  });
+  document.addEventListener('input', function(ev) {
+    if (ev.target && ev.target.id === 'jobSearch') {
+      window._q = ev.target.value;
+      var box = $('jobs'); if (!box) return;
+      var tmp = document.createElement('div'); tmp.innerHTML = picker(pickMode);
+      box.innerHTML = tmp.querySelector('#jobs').innerHTML;
+    }
+  });
+
+  function load(first) {
+    if (!T) { STATE = { invalid: true }; render(); return; }
+    apiGet().then(function(s) {
+      if (busy) return;
+      setState(s);
+    }).catch(function() {
+      if (first) $('app').innerHTML = header() + '<div class="msg">' + esc(t('loadfail')) + '</div>';
+    });
+  }
+  // Fresh state when the page comes back to the front (another phone, or a long gap).
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && STATE && !busy) load(false);
+  });
+  document.documentElement.lang = lang();
+  load(true);
+</script>
+</body>
+</html>

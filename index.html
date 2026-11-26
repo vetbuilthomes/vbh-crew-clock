@@ -45,6 +45,11 @@
   .job { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font-size: 18px; padding: 12px 14px; min-height: 56px;
          border: 0; border-bottom: 1px solid #eee; background: #fff; font-family: inherit; }
   .job .num { font-weight: bold; color: #1f3a5f; flex: 0 0 64px; }
+  .job .jtxt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .job .addr { font-size: 14px; color: #666; margin-top: 2px; }
+  .job .dist { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 14px; color: #555; }
+  .job .here { background: #2e7d32; color: #fff; font-weight: bold; font-size: 13px; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+  .job .mi { white-space: nowrap; }
   .job.sel { background: #e3efe4; outline: 3px solid #2e7d32; outline-offset: -3px; }
   .job:last-child { border-bottom: 0; }
   .empty { color: #777; padding: 14px; font-size: 16px; }
@@ -52,11 +57,15 @@
   .shift:last-child { border-bottom: 0; }
   .shift .flag { color: #b26a00; font-size: 14px; }
   h2 { font-size: 16px; color: #1f3a5f; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
-  .toggle { display: flex; align-items: center; gap: 14px; padding: 12px 0; font-size: 19px; cursor: pointer; }
-  .toggle input { width: 28px; height: 28px; margin: 0; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px 42px; }
-  .chip { font-size: 17px; padding: 10px 14px; min-height: 44px; border: 2px solid #1f3a5f; background: #fff; color: #1f3a5f; border-radius: 22px; font-family: inherit; }
-  .chip.on { background: #1f3a5f; color: #fff; }
+  .locb { display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer; }
+  .sheet h3 { font-size: 17px; margin: 14px 0 4px; }
+  .sheet ol { margin: 0; padding-left: 24px; font-size: 16px; line-height: 1.4; }
+  .sheet ol li { margin: 4px 0; }
+  .sheet .why { font-size: 17px; margin: 0 0 6px; color: #6b4000; }
+  .sheet .nogps { text-align: center; margin: 14px 0 4px; font-size: 15px; }
+  .sheet .nogps a { color: #555; }
+  .sheet .other { margin-top: 22px; padding-top: 12px; border-top: 2px solid #e4e4e0; color: #444; }
+  .sheet .other h2 { font-size: 17px; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
   .modal.show { display: flex; }
   .sheet { background: #fff; border-radius: 16px 16px 0 0; padding: 20px 16px 28px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
@@ -82,32 +91,60 @@
   var T = (Q.get('t') || '').trim();
   var LANG_KEY = 'vbhClockLang';
   var STATE = null, busy = false, picked = null, pickMode = 'in', tick = null;
+  // Location (v2026-11-26.2). FIX is the latest position from the phone; GEO is
+  // 'waiting', 'ok', 'denied' (blocked for this site) or 'off' (no fix: location off,
+  // no signal, unsupported). AUTO is the job number within HERE_METERS of FIX, if any.
+  // manualPick: the person tapped a job, so a later fix never changes their choice.
+  var FIX = null, GEO = 'waiting', AUTO = null, manualPick = false;
+  var HERE_METERS = 300, FIX_FRESH_MS = 60000, FIX_WAIT_MS = 20000;
 
   var S = {
     en: { title: 'VBH Crew Clock', invalid: 'Link not valid, ask your PM', loadfail: 'Could not load. Check your signal and reload.',
           clockedIn: 'Clocked IN', clockedOut: 'Clocked OUT', since: 'since', onJob: 'on', hoursSoFar: 'h so far',
           today: 'Today', todayTotal: 'Today’s total', hours: 'h', noShifts: 'No shifts yet today.',
-          clockIn: 'Clock In', clockOut: 'Clock Out', switchJob: 'Switch Job', pickJob: 'Pick the job', search: 'Search job number or name',
-          noJobs: 'No job matches.', jobsErr: 'Job list unavailable. Try again in a minute.', cancel: 'Cancel', confirm: 'Confirm',
-          tookLunch: 'Took lunch', minutes: 'min', outOf: 'Clock out of', switchTo: 'Switch to', from: 'from',
+          clockIn: 'Clock In', clockOut: 'Clock Out', switchJob: 'Switch Job', pickJob: 'Pick the job', search: 'Search job number, name or address',
+          noJobs: 'No job matches.', jobsErr: 'Job list unavailable. Try again in a minute.', cancel: 'Cancel', close: 'Close',
+          outOf: 'Clock out of', switchTo: 'Switch to', youHere: 'You’re here',
           gettingGps: 'Getting location…', saving: 'Saving…', saved: 'Saved', notSaved: 'Not saved, try again',
           longShift: 'You have been clocked in for over {h} hours. Forgot to clock out? Clock out now and tell your PM.',
           alreadyIn: 'You were already clocked in.', notIn: 'You were not clocked in.', unknownJob: 'That job is not on the list any more.',
-          sameJob: 'You are already on that job.', lunch: 'lunch', noGps: 'no GPS', flagLong: 'long shift', flagLunch: 'lunch capped' },
+          sameJob: 'You are already on that job.', lunch: 'lunch', minutes: 'min', noGps: 'no GPS', flagLong: 'long shift', flagLunch: 'lunch capped',
+          locBanner: 'Location is off or blocked. Tap here to see how to turn it on.',
+          locTitle: 'Location is needed', locBlocked: 'Location is blocked for this page.', locNoFix: 'Could not get your location.',
+          locAndroidH: 'Android phone (Chrome)',
+          locAndroid: ['Turn on Location: swipe down from the top of the screen and tap Location.',
+                       'In Chrome, tap the icon to the left of the web address (a lock or two sliders), then Permissions (or Site settings), then Location, then Allow.',
+                       'Come back here and tap Try again.'],
+          locIphoneH: 'iPhone (Safari)',
+          locIphone: ['Open Settings, then Privacy & Security, then Location Services. Turn it On, then tap Safari Websites and choose While Using the App.',
+                      'Back in Safari, tap aA to the left of the web address, then Website Settings, then Location, then Allow.',
+                      'Come back here and tap Try again.'],
+          tryAgain: 'Try again', withoutIn: 'Clock in without location', withoutOut: 'Clock out without location', withoutSw: 'Switch without location' },
     es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
           clockedIn: 'Marcado ENTRADA', clockedOut: 'Marcado SALIDA', since: 'desde', onJob: 'en', hoursSoFar: 'h hasta ahora',
           today: 'Hoy', todayTotal: 'Total de hoy', hours: 'h', noShifts: 'Sin turnos todavía hoy.',
-          clockIn: 'Marcar entrada', clockOut: 'Marcar salida', switchJob: 'Cambiar de trabajo', pickJob: 'Elige el trabajo', search: 'Busca número o nombre del trabajo',
-          noJobs: 'Ningún trabajo coincide.', jobsErr: 'Lista de trabajos no disponible. Intenta en un minuto.', cancel: 'Cancelar', confirm: 'Confirmar',
-          tookLunch: 'Tomé almuerzo', minutes: 'min', outOf: 'Marcar salida de', switchTo: 'Cambiar a', from: 'desde',
+          clockIn: 'Marcar entrada', clockOut: 'Marcar salida', switchJob: 'Cambiar de trabajo', pickJob: 'Elige el trabajo', search: 'Busca número, nombre o dirección',
+          noJobs: 'Ningún trabajo coincide.', jobsErr: 'Lista de trabajos no disponible. Intenta en un minuto.', cancel: 'Cancelar', close: 'Cerrar',
+          outOf: 'Marcar salida de', switchTo: 'Cambiar a', youHere: 'Está aquí',
           gettingGps: 'Obteniendo ubicación…', saving: 'Guardando…', saved: 'Guardado', notSaved: 'No guardado, intenta otra vez',
           longShift: 'Llevas más de {h} horas marcado. ¿Olvidaste marcar salida? Marca salida ahora y avisa a tu PM.',
           alreadyIn: 'Ya estabas marcado.', notIn: 'No estabas marcado.', unknownJob: 'Ese trabajo ya no está en la lista.',
-          sameJob: 'Ya estás en ese trabajo.', lunch: 'almuerzo', noGps: 'sin GPS', flagLong: 'turno largo', flagLunch: 'almuerzo ajustado' }
+          sameJob: 'Ya estás en ese trabajo.', lunch: 'almuerzo', minutes: 'min', noGps: 'sin GPS', flagLong: 'turno largo', flagLunch: 'almuerzo ajustado',
+          locBanner: 'La ubicación está apagada o bloqueada. Toca aquí para ver cómo activarla.',
+          locTitle: 'Se necesita la ubicación', locBlocked: 'La ubicación está bloqueada para esta página.', locNoFix: 'No se pudo obtener tu ubicación.',
+          locAndroidH: 'Teléfono Android (Chrome)',
+          locAndroid: ['Activa la Ubicación: desliza hacia abajo desde arriba de la pantalla y toca Ubicación.',
+                       'En Chrome, toca el ícono a la izquierda de la dirección web (un candado o dos controles), luego Permisos (o Configuración del sitio), luego Ubicación y Permitir.',
+                       'Vuelve aquí y toca Intentar otra vez.'],
+          locIphoneH: 'iPhone (Safari)',
+          locIphone: ['Abre Configuración, luego Privacidad y seguridad, luego Localización. Actívala, luego toca Sitios web de Safari y elige Cuando se use la app.',
+                      'En Safari, toca aA a la izquierda de la dirección web, luego Configuración del sitio web, luego Ubicación y Permitir.',
+                      'Vuelve aquí y toca Intentar otra vez.'],
+          tryAgain: 'Intentar otra vez', withoutIn: 'Marcar entrada sin ubicación', withoutOut: 'Marcar salida sin ubicación', withoutSw: 'Cambiar sin ubicación' }
   };
   function lang() { try { return localStorage.getItem(LANG_KEY) === 'es' ? 'es' : 'en'; } catch (e) { return window._lang || 'en'; } }
   function setLang(l) { window._lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
-  function t(k) { return S[lang()][k] || S.en[k] || k; }
+  function t(k, l) { var L = l || lang(); return S[L][k] || S.en[k] || k; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function $(id) { return document.getElementById(id); }
@@ -135,18 +172,82 @@
     toast._t = setTimeout(function() { el.className = 'toast' + (err ? ' err' : ''); }, err ? 3500 : 1500);
   }
 
-  // GPS: ask once per tap, wait at most 8 s, send null when refused or unavailable.
-  function gps() {
-    return new Promise(function(resolve) {
-      if (!navigator.geolocation) return resolve(null);
+  // ---------------- location ----------------
+  // Asked for as soon as the page loads, so the phone's permission prompt shows
+  // up before anyone taps a button (a tap used to save before the prompt was answered).
+  function fixFrom(p) { return { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() }; }
+  function startGeo() {
+    if (!navigator.geolocation) { GEO = 'off'; return; }
+    try {
+      navigator.geolocation.watchPosition(function(p) { FIX = fixFrom(p); GEO = 'ok'; onFix(); },
+        function(e) { if (e && e.code === 1) { GEO = 'denied'; onFix(); } else if (!FIX) { GEO = 'off'; onFix(); } },
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: FIX_WAIT_MS });
+    } catch (e) { GEO = 'off'; }
+  }
+  // For a save: a fix less than a minute old, or wait up to 20 s for a new one.
+  // Rejects with { code } (1 blocked, 2 unavailable, 3 timed out, 0 unsupported).
+  function fixForSave() {
+    return new Promise(function(resolve, reject) {
+      if (FIX && Date.now() - FIX.at < FIX_FRESH_MS) return resolve(FIX);
+      if (!navigator.geolocation) return reject({ code: 0 });
       var finished = false;
-      var timer = setTimeout(function() { if (!finished) { finished = true; resolve(null); } }, 8000);
+      var guard = setTimeout(function() { if (!finished) { finished = true; reject({ code: 3 }); } }, FIX_WAIT_MS + 1000);
       navigator.geolocation.getCurrentPosition(function(p) {
-        if (finished) return; finished = true; clearTimeout(timer);
-        resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy });
-      }, function() { if (finished) return; finished = true; clearTimeout(timer); resolve(null); },
-      { enableHighAccuracy: true, timeout: 7500, maximumAge: 30000 });
+        if (finished) return; finished = true; clearTimeout(guard);
+        FIX = fixFrom(p); GEO = 'ok'; resolve(FIX);
+      }, function(e) {
+        if (finished) return; finished = true; clearTimeout(guard);
+        if (e && e.code === 1) GEO = 'denied';
+        reject({ code: e ? e.code : 2 });
+      }, { enableHighAccuracy: true, timeout: FIX_WAIT_MS, maximumAge: 30000 });
     });
+  }
+  function gpsOut(f) { return f ? { lat: f.lat, lng: f.lng, acc: f.acc } : null; }
+
+  // Metres between two points (haversine).
+  function meters(aLat, aLng, bLat, bLng) {
+    var R = 6371000, r = Math.PI / 180;
+    var dLat = (bLat - aLat) * r, dLng = (bLng - aLng) * r;
+    var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  function distOf(j) {
+    if (!FIX || j.lat == null || j.lng == null) return null;
+    return meters(FIX.lat, FIX.lng, Number(j.lat), Number(j.lng));
+  }
+  function miles(m) {
+    var mi = m / 1609.344;
+    return mi < 0.1 ? '<0.1 mi' : (mi < 10 ? mi.toFixed(1) : String(Math.round(mi))) + ' mi';
+  }
+  // Closest job first once the phone has a fix; jobs with no coordinates last.
+  // Without a fix, the server's order (job number, newest first).
+  function sortedJobs() {
+    var jobs = (STATE && STATE.jobs || []).slice();
+    if (!FIX) return jobs;
+    var withD = [], without = [];
+    jobs.forEach(function(j) { var d = distOf(j); if (d === null) without.push(j); else { j._d = d; withD.push(j); } });
+    withD.sort(function(a, b) { return a._d - b._d; });
+    return withD.concat(without);
+  }
+  function findAuto() {
+    if (!FIX) return null;
+    var best = null;
+    (STATE && STATE.jobs || []).forEach(function(j) { var d = distOf(j); if (d !== null && d <= HERE_METERS && (!best || d < best.d)) best = { j: j, d: d }; });
+    return best ? best.j.number : null;
+  }
+  function jobByNumber(n) { return (STATE && STATE.jobs || []).filter(function(j) { return j.number === n; })[0] || null; }
+  // Pre-select the job the phone is standing on, unless the person already chose one.
+  function applyAuto() {
+    AUTO = findAuto();
+    if (manualPick || !AUTO || !STATE || STATE.invalid) return;
+    if (pickMode === 'switch') { if (STATE.open && STATE.open.jobNumber === AUTO) return; picked = jobByNumber(AUTO); }
+    else if (!STATE.open) picked = jobByNumber(AUTO);
+  }
+  function onFix() {
+    if (!STATE || STATE.invalid || busy) return;
+    applyAuto();
+    refreshLists();
+    var lb = $('locBanner'); if (lb) lb.style.display = GEO === 'denied' || GEO === 'off' ? '' : 'none';
   }
 
   // ---------------- render ----------------
@@ -165,8 +266,10 @@
       $('app').innerHTML = header() + '<div class="msg" id="invalid">' + esc(t('invalid')) + '</div>';
       return;
     }
+    if (pickMode === 'in') applyAuto();
     var o = STATE.open, h = header() + '<main>';
     if (o && o.longShift) h += '<div class="banner" id="longShift">&#9888; ' + esc(t('longShift').replace('{h}', STATE.longShiftHours)) + '</div>';
+    h += '<button type="button" class="banner locb" id="locBanner"' + (GEO === 'denied' || GEO === 'off' ? '' : ' style="display:none"') + '>&#9888; ' + esc(t('locBanner')) + '</button>';
     h += '<div class="card">';
     if (o) {
       h += '<div class="status in" id="status">' + esc(t('clockedIn')) + '</div>' +
@@ -181,16 +284,14 @@
       h += '<button type="button" class="btn out" id="btnOut">' + esc(t('clockOut')) + '</button>' +
            '<button type="button" class="btn sw" id="btnSwitch">' + esc(t('switchJob')) + '</button>';
     } else {
-      h += '<div class="card"><h2>' + esc(t('pickJob')) + '</h2>' + picker('in') + '</div>' +
-           '<button type="button" class="btn in" id="btnIn"' + (picked ? '' : ' disabled') + '>' + esc(t('clockIn')) +
-           (picked ? ': ' + esc(picked.number) : '') + '</button>';
+      h += '<div class="card"><h2>' + esc(t('pickJob')) + '</h2>' + picker() + '</div>' +
+           '<button type="button" class="btn in" id="btnIn"' + (picked ? '' : ' disabled') + '>' + inLabel() + '</button>';
     }
     h += '<div class="card"><h2>' + esc(t('today')) + '</h2>';
     var sh = STATE.shifts || [];
     if (!sh.length) h += '<div class="empty" style="padding:4px 0">' + esc(t('noShifts')) + '</div>';
     sh.forEach(function(s) {
-      h += '<div class="shift"><div><b>' + esc(s.jobNumber) + '</b> ' + esc(s.jobName) + '<br><span class="meta">' + esc(s.inTime) + ' – ' + esc(s.outTime) +
-        (s.lunchMinutes ? ' · ' + s.lunchMinutes + ' ' + esc(t('minutes')) + ' ' + esc(t('lunch')) : '') + '</span>' +
+      h += '<div class="shift"><div><b>' + esc(s.jobNumber) + '</b> ' + esc(s.jobName) + '<br><span class="meta">' + esc(s.inTime) + ' – ' + esc(s.outTime) + '</span>' +
         (s.flags ? '<br><span class="flag">' + esc(flagsText(s.flags)) + '</span>' : '') + '</div><div><b>' + fmtH(s.hours) + ' ' + esc(t('hours')) + '</b></div></div>';
     });
     h += '</div><div class="foot">' + esc(STATE.version || '') + '</div></main>';
@@ -203,6 +304,7 @@
       if (tt) tt.textContent = fmtH(liveTotal()) + ' ' + t('hours');
     }, 30000);
   }
+  function inLabel() { return esc(t('clockIn')) + (picked ? ': ' + esc(picked.number) : ''); }
 
   function flagsText(f) {
     return f.split(',').map(function(x) { x = x.trim();
@@ -216,88 +318,130 @@
   }
   function liveTotal() { return (STATE.todayHours - (STATE.open ? STATE.open.hours : 0)) + liveHours(); }
 
-  function picker(mode) {
+  function jobRows() {
     var q = (window._q || '').toLowerCase().trim();
-    var jobs = (STATE.jobs || []).filter(function(j) {
-      return !q || j.number.toLowerCase().indexOf(q) !== -1 || j.name.toLowerCase().indexOf(q) !== -1;
+    var jobs = sortedJobs().filter(function(j) {
+      return !q || j.number.toLowerCase().indexOf(q) !== -1 || j.name.toLowerCase().indexOf(q) !== -1 ||
+        String(j.address || '').toLowerCase().indexOf(q) !== -1;
     });
-    var h = '<input class="search" id="jobSearch" placeholder="' + esc(t('search')) + '" autocomplete="off" inputmode="search">' +
-      '<div class="jobs" id="jobs">';
+    var h = '';
     if (STATE.jobsError && !(STATE.jobs || []).length) h += '<div class="empty">' + esc(t('jobsErr')) + '</div>';
     else if (!jobs.length) h += '<div class="empty">' + esc(t('noJobs')) + '</div>';
     jobs.slice(0, 200).forEach(function(j) {
-      var sel = picked && picked.number === j.number;
+      var sel = picked && picked.number === j.number, d = distOf(j), here = AUTO === j.number;
       h += '<button type="button" class="job' + (sel ? ' sel' : '') + '" data-job="' + esc(j.number) + '">' +
-        '<span class="num">' + esc(j.number) + '</span><span>' + esc(j.name) + '</span></button>';
+        '<span class="num">' + esc(j.number) + '</span>' +
+        '<span class="jtxt"><span class="jname">' + esc(j.name) + '</span>' +
+        (j.address ? '<span class="addr">' + esc(j.address) + '</span>' : '') + '</span>' +
+        '<span class="dist">' + (here ? '<span class="here">' + esc(t('youHere')) + '</span>' : '') +
+        (d !== null ? '<span class="mi">' + esc(miles(d)) + '</span>' : '') + '</span></button>';
     });
-    return h + '</div>';
+    return h;
+  }
+  function picker() {
+    return '<input class="search" id="jobSearch" placeholder="' + esc(t('search')) + '" autocomplete="off" inputmode="search">' +
+      '<div class="jobs" id="jobs">' + jobRows() + '</div>';
+  }
+  // Redraw only the job list and its button, so typing in the search box is not interrupted.
+  function refreshLists() {
+    var box = $('jobs'); if (!box) return;
+    box.innerHTML = jobRows();
+    var bi = $('btnIn'); if (bi && !busy) { bi.disabled = !picked; bi.innerHTML = inLabel(); }
+    var ds = $('doSwitch'); if (ds && !busy) { ds.disabled = !picked; ds.textContent = t('switchJob') + (picked ? ': ' + picked.number : ''); }
   }
 
   // ---------------- actions ----------------
-  function act(body, btn, label) {
-    if (busy) return Promise.resolve();
+  // Wait for a location, then save. No location: the help screen, never a silent "no GPS".
+  function act(body, btn) {
+    if (busy) return;
     busy = true;
-    var orig = btn ? btn.textContent : '';
+    var orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.textContent = t('gettingGps'); }
-    return gps().then(function(g) {
-      if (btn) btn.textContent = t('saving');
-      body.gps = g;
-      return apiPost(body);
-    }).then(function(s) {
-      busy = false; picked = null; window._q = '';
+    fixForSave().then(function(f) { save(body, gpsOut(f), btn, orig); },
+      function(e) { busy = false; if (btn) { btn.disabled = false; btn.innerHTML = orig; } locSheet(body, e && e.code); });
+  }
+  function save(body, g, btn, orig) {
+    busy = true;
+    if (btn) { btn.disabled = true; btn.textContent = t('saving'); }
+    body.gps = g;
+    if (body.jobNumber) body.pick = body.jobNumber === AUTO ? 'auto' : 'manual';
+    apiPost(body).then(function(s) {
+      busy = false; picked = null; manualPick = false; window._q = '';
+      closeSheet();
       setState(s);
       if (s.warn === 'already_in') toast(t('alreadyIn'), true);
       else if (s.warn === 'not_in') toast(t('notIn'), true);
       else if (s.warn === 'unknown_job') toast(t('unknownJob'), true);
       else if (s.warn === 'same_job') toast(t('sameJob'), true);
-      else toast(label || t('saved'));
+      else toast(t('saved'));
     }).catch(function() {
       busy = false;
-      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      if (btn) { btn.disabled = false; btn.innerHTML = orig || btn.innerHTML; }
       toast(t('notSaved'), true);
     });
   }
 
+  function locHelp(l) {
+    function list(a) { return '<ol>' + a.map(function(x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>'; }
+    return '<h3>' + esc(t('locAndroidH', l)) + '</h3>' + list(t('locAndroid', l)) +
+           '<h3>' + esc(t('locIphoneH', l)) + '</h3>' + list(t('locIphone', l));
+  }
+  // The location screen: why, how to turn it on (both languages, the chosen one first),
+  // Try again, and a small way through without location (still flagged "no GPS").
+  // body null: opened from the banner, help only.
+  function locSheet(body, code) {
+    var l = lang(), other = l === 'es' ? 'en' : 'es';
+    var why = code === 1 || GEO === 'denied' ? 'locBlocked' : 'locNoFix';
+    var h = '<div id="locSheet"><h2>&#128205; ' + esc(t('locTitle')) + '</h2><p class="why">' + esc(t(why)) + '</p>' + locHelp(l);
+    if (body) {
+      var w = body.action === 'out' ? 'withoutOut' : body.action === 'switch' ? 'withoutSw' : 'withoutIn';
+      h += '<button type="button" class="btn in" id="locRetry">' + esc(t('tryAgain')) + '</button>' +
+           '<button type="button" class="btn grey" id="locCancel">' + esc(t('cancel')) + '</button>' +
+           '<p class="nogps"><a href="#" id="locWithout">' + esc(t(w)) + '</a></p>';
+    } else {
+      h += '<button type="button" class="btn grey" id="locCancel">' + esc(t('close')) + '</button>';
+    }
+    h += '<div class="other"><h2>' + esc(t('locTitle', other)) + '</h2><p class="why">' + esc(t(why, other)) + '</p>' + locHelp(other) + '</div></div>';
+    $('sheet').innerHTML = h;
+    $('modal').className = 'modal show';
+    $('sheet').scrollTop = 0;
+    $('locCancel').onclick = closeSheet;
+    if (body) {
+      $('locRetry').onclick = function() { act(body, this); };
+      $('locWithout').onclick = function(ev) { ev.preventDefault(); if (!busy) save(body, null, $('locRetry'), esc(t('tryAgain'))); };
+    }
+  }
+
   function openOutSheet() {
-    var o = STATE.open, d = STATE.defaultLunchMinutes || 30;
+    var o = STATE.open;
     $('sheet').innerHTML = '<h2>' + esc(t('outOf')) + ' ' + esc(o.jobNumber) + ' ' + esc(o.jobName) + '</h2>' +
       '<div class="meta">' + esc(t('since')) + ' ' + esc(o.inTime) + ' · ' + fmtH(liveHours()) + ' ' + esc(t('hours')) + '</div>' +
-      '<label class="toggle"><input type="checkbox" id="lunch"> ' + esc(t('tookLunch')) + '</label>' +
-      '<div class="chips" id="chips" style="display:none">' + [15, 30, 45, 60].map(function(m) {
-        return '<button type="button" class="chip' + (m === d ? ' on' : '') + '" data-min="' + m + '">' + m + ' ' + esc(t('minutes')) + '</button>'; }).join('') + '</div>' +
       '<button type="button" class="btn out" id="doOut">' + esc(t('clockOut')) + '</button>' +
       '<button type="button" class="btn grey" id="doCancel">' + esc(t('cancel')) + '</button>';
     $('modal').className = 'modal show';
-    $('lunch').onchange = function() { $('chips').style.display = this.checked ? 'flex' : 'none'; };
-    $('chips').onclick = function(ev) {
-      var b = ev.target.closest('button'); if (!b) return;
-      Array.prototype.forEach.call($('chips').children, function(c) { c.className = 'chip'; });
-      b.className = 'chip on';
-    };
     $('doCancel').onclick = closeSheet;
-    $('doOut').onclick = function() {
-      var mins = 0;
-      if ($('lunch').checked) { var on = $('chips').querySelector('.on'); mins = on ? Number(on.getAttribute('data-min')) : d; }
-      var btn = this;
-      act({ action: 'out', lunchMinutes: mins }, btn).then(closeSheet);
-    };
+    $('doOut').onclick = function() { act({ action: 'out' }, this); };
   }
 
   function openSwitchSheet() {
-    picked = null; window._q = ''; pickMode = 'switch';
-    $('sheet').innerHTML = '<h2>' + esc(t('switchTo')) + '</h2>' + picker('switch') +
-      '<button type="button" class="btn sw" id="doSwitch" disabled>' + esc(t('switchJob')) + '</button>' +
+    picked = null; manualPick = false; window._q = ''; pickMode = 'switch';
+    applyAuto();
+    $('sheet').innerHTML = '<h2>' + esc(t('switchTo')) + '</h2>' + picker() +
+      '<button type="button" class="btn sw" id="doSwitch"' + (picked ? '' : ' disabled') + '>' + esc(t('switchJob')) + (picked ? ': ' + esc(picked.number) : '') + '</button>' +
       '<button type="button" class="btn grey" id="doCancel">' + esc(t('cancel')) + '</button>';
     $('modal').className = 'modal show';
     $('doCancel').onclick = closeSheet;
     $('doSwitch').onclick = function() {
       if (!picked) return;
-      act({ action: 'switch', jobNumber: picked.number }, this).then(closeSheet);
+      act({ action: 'switch', jobNumber: picked.number }, this);
     };
-    setTimeout(function() { var i = $('jobSearch'); if (i) i.focus(); }, 50);
   }
 
-  function closeSheet() { $('modal').className = 'modal'; $('sheet').innerHTML = ''; pickMode = 'in'; }
+  function closeSheet() {
+    var wasSwitch = pickMode === 'switch';
+    $('modal').className = 'modal'; $('sheet').innerHTML = ''; pickMode = 'in';
+    if (wasSwitch) { picked = null; manualPick = false; window._q = ''; }
+  }
 
   function setState(s) { STATE = s; STATE._receivedAt = Date.now(); render(); }
 
@@ -307,25 +451,18 @@
     if (!b || busy) return;
     if (b.hasAttribute('data-lang')) { setLang(b.getAttribute('data-lang')); return; }
     if (b.hasAttribute('data-job')) {
-      var num = b.getAttribute('data-job');
-      picked = (STATE.jobs || []).filter(function(j) { return j.number === num; })[0] || null;
-      if (pickMode === 'switch') {
-        Array.prototype.forEach.call(document.querySelectorAll('#sheet .job'), function(el) { el.className = 'job' + (el.getAttribute('data-job') === num ? ' sel' : ''); });
-        var ds = $('doSwitch'); if (ds) { ds.disabled = !picked; ds.textContent = t('switchJob') + (picked ? ': ' + picked.number : ''); }
-      } else render();
+      picked = jobByNumber(b.getAttribute('data-job'));
+      manualPick = true;
+      refreshLists();
       return;
     }
     if (b.id === 'btnIn' && picked) { act({ action: 'in', jobNumber: picked.number }, b); return; }
     if (b.id === 'btnOut') { openOutSheet(); return; }
     if (b.id === 'btnSwitch') { openSwitchSheet(); return; }
+    if (b.id === 'locBanner') { locSheet(null, GEO === 'denied' ? 1 : 2); return; }
   });
   document.addEventListener('input', function(ev) {
-    if (ev.target && ev.target.id === 'jobSearch') {
-      window._q = ev.target.value;
-      var box = $('jobs'); if (!box) return;
-      var tmp = document.createElement('div'); tmp.innerHTML = picker(pickMode);
-      box.innerHTML = tmp.querySelector('#jobs').innerHTML;
-    }
+    if (ev.target && ev.target.id === 'jobSearch') { window._q = ev.target.value; refreshLists(); }
   });
 
   function load(first) {
@@ -339,9 +476,10 @@
   }
   // Fresh state when the page comes back to the front (another phone, or a long gap).
   document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible' && STATE && !busy) load(false);
+    if (document.visibilityState === 'visible' && STATE && !busy && $('modal').className === 'modal') load(false);
   });
   document.documentElement.lang = lang();
+  if (T) startGeo();
   load(true);
 </script>
 </body>

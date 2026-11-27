@@ -113,6 +113,7 @@
   .btn.small { font-size: 18px; padding: 12px; min-height: 52px; }
   h3.day { font-size: 15px; color: #1f3a5f; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
   .mrow { display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; }
+  .mrow.saving { opacity: .6; }
   .mrow.open { background: #fdecea; padding: 10px 8px; border-radius: 8px; }
   .mmain { flex: 1; min-width: 0; font-size: 16px; }
   .macts { display: flex; flex-direction: column; gap: 6px; }
@@ -806,14 +807,15 @@
         var day = '';
         p.rows.forEach(function(r) {
           if (r.day !== day) { day = r.day; h += '<h3 class="day">' + esc(day) + '</h3>'; }
-          h += '<div class="mrow" data-row="' + r.row + '"><div class="mmain"><div><b>' + esc(r.job) + '</b> ' + esc(r.jobName) + '</div>' +
+          h += '<div class="mrow' + (r._saving ? ' saving' : '') + '" data-row="' + r.row + '"><div class="mmain"><div><b>' + esc(r.job) + '</b> ' + esc(r.jobName) + '</div>' +
             '<div class="meta">' + esc(r.inTime) + ' – ' + esc(r.outTime) + ' · <b>' + fmtH(r.hours) + ' h</b>' +
             (r.reg != null && (r.status !== 'Pending') ? ' (' + fmtH(r.reg) + ' reg' + (r.ot ? ', <span class="otx">' + fmtH(r.ot) + ' OT</span>' : '') + ')' : '') + '</div>' +
             flagsHtml(r.flags) +
             '<div class="st st-' + r.status.toLowerCase() + '">' + esc(r.status) +
             (r.status === 'Approved' ? ' by ' + esc(r.approvedBy) + ' ' + esc(r.approvedAt) : '') +
-            (r.status === 'Posted' ? ' · ' + esc(r.bill) : '') + '</div></div><div class="macts">';
-          if (r.status === 'Pending') h += '<button type="button" class="mb ok" data-approve="' + r.row + '">Approve</button><button type="button" class="mb" data-edit="' + r.row + '">Edit time</button>';
+            (r.status === 'Posted' ? ' · ' + esc(r.bill) : '') + (r._saving ? ' · saving…' : '') + '</div></div><div class="macts">';
+          if (r._saving) h += '';
+          else if (r.status === 'Pending') h += '<button type="button" class="mb ok" data-approve="' + r.row + '">Approve</button><button type="button" class="mb" data-edit="' + r.row + '">Edit time</button>';
           else if (r.status === 'Approved') h += '<button type="button" class="mb" data-unapprove="' + r.row + '">Unapprove</button>';
           h += '</div></div>';
         });
@@ -843,6 +845,16 @@
         return v;
       }).catch(function() { mbusy = false; toast('Not saved, try again', true); });
     }
+    // Show the result the moment the button is tapped (the save itself takes about 10 s), marked
+    // "saving…". The server's answer then replaces it; a failed save puts the page back as it was.
+    function instant(change, body, okMsg) {
+      if (mbusy) return;
+      var snap = JSON.stringify(V);
+      change();
+      mrender();
+      mact(body, okMsg).then(function(v) { if (!v) { V = JSON.parse(snap); mrender(); } });
+    }
+    function personOf(token) { return V.weeks[WK].people.filter(function(p) { return p.token === token; })[0] || null; }
     // A shift someone forgot to clock out of: the real clock-out time and a reason (v2026-11-26.13).
     function closeSheetFor(token) {
       var x = null;
@@ -892,9 +904,24 @@
       var b = ev.target.closest && ev.target.closest('button');
       if (!b || mbusy || !V) return;
       if (b.hasAttribute('data-wk')) { WK = Number(b.getAttribute('data-wk')); mrender(); return; }
-      if (b.hasAttribute('data-approve')) { b.disabled = true; mact({ op: 'approve', row: Number(b.getAttribute('data-approve')) }, 'Approved'); return; }
-      if (b.hasAttribute('data-unapprove')) { b.disabled = true; mact({ op: 'unapprove', row: Number(b.getAttribute('data-unapprove')) }, 'Back to pending'); return; }
-      if (b.hasAttribute('data-approve-week')) { b.disabled = true; b.textContent = 'Approving…'; mact({ op: 'approveWeek', token: b.getAttribute('data-approve-week'), week: V.weeks[WK].mon }, 'Week approved'); return; }
+      if (b.hasAttribute('data-approve')) {
+        var an = Number(b.getAttribute('data-approve')), ax = findRow(an);
+        instant(function() { if (ax) { ax.r.status = 'Approved'; ax.r.approvedBy = V.manager; ax.r.approvedAt = ''; ax.r._saving = true; ax.p.pending = Math.max(0, ax.p.pending - 1); } },
+                { op: 'approve', row: an }, 'Approved');
+        return;
+      }
+      if (b.hasAttribute('data-unapprove')) {
+        var un = Number(b.getAttribute('data-unapprove')), ux = findRow(un);
+        instant(function() { if (ux) { ux.r.status = 'Pending'; ux.r._saving = true; ux.p.pending++; } },
+                { op: 'unapprove', row: un }, 'Back to pending');
+        return;
+      }
+      if (b.hasAttribute('data-approve-week')) {
+        var wt = b.getAttribute('data-approve-week'), wp = personOf(wt);
+        instant(function() { if (wp) { wp.rows.forEach(function(r) { if (r.status === 'Pending') { r.status = 'Approved'; r.approvedBy = V.manager; r.approvedAt = ''; r._saving = true; } }); wp.pending = 0; } },
+                { op: 'approveWeek', token: wt, week: V.weeks[WK].mon }, 'Week approved');
+        return;
+      }
       if (b.hasAttribute('data-edit')) { editSheet(Number(b.getAttribute('data-edit'))); return; }
       if (b.hasAttribute('data-close')) { closeSheetFor(b.getAttribute('data-close')); return; }
     });

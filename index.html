@@ -100,6 +100,8 @@
   .savebox ol { margin: 0; padding-left: 24px; font-size: 16px; line-height: 1.4; }
   .savebox ol li { margin: 4px 0; }
   .savebox p { font-size: 16px; margin: 6px 0; }
+  .wins { margin: 10px 0 0; padding: 10px 14px; border-radius: 10px; background: #fff; border-left: 6px solid #1f3a5f; font-size: 16px; line-height: 1.45; }
+  .wins .wl { display: inline-block; width: 26px; font-weight: bold; color: #b3261e; }
   .hint { text-align: center; color: #666; font-size: 16px; margin: 16px 8px 6px; }
   .pl .pjob { font-size: 19px; font-weight: bold; line-height: 1.3; word-wrap: break-word; }
   .pl-sec { font-size: 14px; color: #555; margin: 14px 0 2px; text-transform: uppercase; letter-spacing: .04em; }
@@ -217,6 +219,9 @@
           photoOk: '✓ {n} uploaded to job {job}.', photoPart: '{ok} uploaded, {fail} NOT uploaded. Try those again.',
           photoFail: 'NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
           photoBig: 'A video was too big (limit 500 MB).',
+          winsTitle: 'Daily WINS video. Say these four things:',
+          wins: [['W', 'What got done today?'], ['I', 'Issues: any issues that came up today?'],
+                 ['N', 'Next steps: what are you going to accomplish tomorrow?'], ['S', 'Schedule: are you still on schedule?']],
           punchTitle: 'Punch list', plNone: 'No open punch list for this job.', plClockIn: 'Clock in to see your punch list and add photos.',
           plLoading: 'Loading punch list…', plErr: 'The punch list could not load. Reload the page to try again.',
           plCount: '{a} of {b} done', plDoneSec: 'Done', plAs: 'Checking as', plNoItems: 'No items',
@@ -251,6 +256,9 @@
           photoOk: '✓ {n} subidos al trabajo {job}.', photoPart: '{ok} subidos, {fail} NO subidos. Intenta esos otra vez.',
           photoFail: 'NO subido. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron los primeros {n}. Agrega los demás después.',
           photoBig: 'Un video era demasiado grande (límite 500 MB).',
+          winsTitle: 'Video diario WINS. Di estas cuatro cosas:',
+          wins: [['W', '¿Qué se hizo hoy?'], ['I', 'Problemas: ¿hubo algún problema hoy?'],
+                 ['N', 'Siguientes pasos: ¿qué vas a lograr mañana?'], ['S', 'Horario: ¿sigues a tiempo?']],
           punchTitle: 'Lista de pendientes', plNone: 'No hay lista de pendientes abierta para este trabajo.', plClockIn: 'Marca entrada para ver tu lista de pendientes y agregar fotos.',
           plLoading: 'Cargando lista…', plErr: 'No se pudo cargar la lista. Recarga la página para intentar otra vez.',
           plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas',
@@ -420,6 +428,8 @@
            '<button type="button" class="btn sw" id="btnSwitch">' + esc(t('switchJob')) + '</button>' +
            '<button type="button" class="btn sw" id="btnPhotos"' + (PHOTO.busy ? ' disabled' : '') + '>&#128247; ' + esc(t('addPhotos')) + ': ' + esc(o.jobNumber) + '</button>' +
            '<div class="pmsg ' + esc(PHOTO.cls) + '" id="photoMsg"' + (PHOTO.msg ? '' : ' style="display:none"') + '>' + esc(PHOTO.msg) + '</div>' +
+           '<div class="wins" id="wins"><b>' + esc(t('winsTitle')) + '</b>' +
+             t('wins').map(function(w) { return '<div><span class="wl">' + esc(w[0]) + '</span>' + esc(w[1]) + '</div>'; }).join('') + '</div>' +
            '<div id="punchWrap">' + plHtml() + '</div>';
     } else {
       h += '<div class="card"><h2>' + esc(t('pickJob')) + '</h2>' + picker() + '</div>' +

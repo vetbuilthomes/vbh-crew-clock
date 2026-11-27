@@ -76,6 +76,33 @@
   .toast.show { opacity: 1; }
   .msg { padding: 48px 20px; text-align: center; font-size: 21px; }
   .foot { text-align: center; color: #888; font-size: 13px; margin-top: 20px; }
+  /* punch list and photos on the clock page (v2026-11-27.1); item look copied from the punch list page */
+  .pmsg { margin: 10px 0 0; padding: 12px 14px; border-radius: 10px; font-size: 17px; background: #eef2f7; color: #1f3a5f; }
+  .pmsg.ok { background: #e3efe4; color: #1b5e20; font-weight: bold; }
+  .pmsg.err { background: #fdecea; color: #b3261e; font-weight: bold; }
+  .hint { text-align: center; color: #666; font-size: 16px; margin: 16px 8px 6px; }
+  .pl .pjob { font-size: 19px; font-weight: bold; line-height: 1.3; word-wrap: break-word; }
+  .pl-sec { font-size: 14px; color: #555; margin: 14px 0 2px; text-transform: uppercase; letter-spacing: .04em; }
+  .pl-item { border-top: 1px solid #eee; }
+  .pl-item label { display: flex; align-items: center; gap: 14px; padding: 12px 0; min-height: 64px; cursor: pointer; }
+  .pl-item input[type=checkbox] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .pl-box { flex: 0 0 48px; width: 48px; height: 48px; border: 3px solid #1f3a5f; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; background: #fff; }
+  .pl-box svg { width: 32px; height: 32px; display: none; }
+  .pl-item input:checked + .pl-box { background: #2e7d32; border-color: #2e7d32; }
+  .pl-item input:checked + .pl-box svg { display: block; }
+  .pl-item input:focus-visible + .pl-box { outline: 3px solid #f0a500; outline-offset: 2px; }
+  .pl-text { flex: 1; min-width: 0; }
+  .pl-t { font-size: 19px; line-height: 1.3; word-wrap: break-word; }
+  .pl-es { font-size: 16px; color: #3d5a80; font-style: italic; margin-top: 2px; }
+  .pl-loc { font-size: 16px; color: #6b6b6b; margin-top: 3px; }
+  .pl-by { font-size: 14px; color: #2e7d32; margin-top: 3px; }
+  .pl-flagnote { font-size: 16px; color: #b3261e; margin-top: 4px; }
+  .pl-item.done .pl-t, .pl-item.done .pl-es { text-decoration: line-through; color: #888; }
+  .pl-item.flag { border-left: 6px solid #b3261e; padding-left: 8px; }
+  .pl-item.pending { opacity: .6; }
+  .pl-row2 { display: flex; justify-content: flex-end; padding: 0 0 12px; }
+  .pl-prob { font-size: 16px; padding: 10px 14px; min-height: 44px; border: 2px solid #b3261e; color: #b3261e; background: #fff; border-radius: 8px; font-family: inherit; }
   /* manager view (?m=) */
   .tabs { display: flex; gap: 8px; margin: 10px 0; }
   .tab { flex: 1; font-size: 17px; padding: 10px; min-height: 56px; border: 2px solid #1f3a5f; background: #fff; color: #1f3a5f; border-radius: 10px; font-family: inherit; }
@@ -107,11 +134,16 @@
 <div id="app"><div class="msg" id="loading">Loading… / Cargando…</div></div>
 <div class="toast" id="toast"></div>
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<!-- Kept outside #app: the page is redrawn when it comes back from the camera, and the picker must survive that. -->
+<input type="file" id="photoInput" accept="image/*" multiple style="display:none">
 <script>
   // Apps Script deployment (vetbuilthomes@gmail.com, "VBH Crew Clock"). Redeployed in
   // place with clasp deploy -i, so this URL never changes. Set once by publish-page.sh's
   // first run (see crew-clock/PROJECT.md).
   var API = 'https://script.google.com/macros/s/AKfycbw3O4dwJNVsGJfzg09kPYVpXp8IH5Dm7foQUvT9XiGuPPq6wzgAutV16U2fkFPNfYfh/exec';
+  // The punch list web app ("VBH Punch List", same account). The clock page uses the same
+  // calls as the WhatsApp punch list page: read a list, save a tap, save a problem.
+  var PUNCH_API = 'https://script.google.com/macros/s/AKfycbwh6gVmTaVMuJr8UeyB1oqbRcIyYsr1eTNZFXousbBRlcHvZzzsUBVZvnguHthBi2XQ/exec';
   var Q = new URLSearchParams(location.search);
   var T = (Q.get('t') || '').trim();
   var LANG_KEY = 'vbhClockLang';
@@ -144,7 +176,13 @@
           locIphone: ['Open Settings, then Privacy & Security, then Location Services. Turn it On, then tap Safari Websites and choose While Using the App.',
                       'Back in Safari, tap aA to the left of the web address, then Website Settings, then Location, then Allow.',
                       'Come back here and tap Try again.'],
-          tryAgain: 'Try again', withoutIn: 'Clock in without location', withoutOut: 'Clock out without location', withoutSw: 'Switch without location' },
+          tryAgain: 'Try again', withoutIn: 'Clock in without location', withoutOut: 'Clock out without location', withoutSw: 'Switch without location',
+          addPhotos: 'Add photos', photoUp: 'Uploading photo {i} of {n}… keep this page open.',
+          photoOk: '✓ {n} photo(s) uploaded to job {job}.', photoPart: '{ok} uploaded, {fail} NOT uploaded. Try those again.',
+          photoFail: 'Photos NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
+          punchTitle: 'Punch list', plNone: 'No open punch list for this job.', plClockIn: 'Clock in to see your punch list and add photos.',
+          plLoading: 'Loading punch list…', plErr: 'The punch list could not load. Reload the page to try again.',
+          plCount: '{a} of {b} done', plDoneSec: 'Done', plAs: 'Checking as', plNoItems: 'No items' },
     es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
           clockedIn: 'Marcado ENTRADA', clockedOut: 'Marcado SALIDA', since: 'desde', onJob: 'en', hoursSoFar: 'h hasta ahora',
           today: 'Hoy', todayTotal: 'Total de hoy', hours: 'h', noShifts: 'Sin turnos todavía hoy.',
@@ -165,7 +203,13 @@
           locIphone: ['Abre Configuración, luego Privacidad y seguridad, luego Localización. Actívala, luego toca Sitios web de Safari y elige Cuando se use la app.',
                       'En Safari, toca aA a la izquierda de la dirección web, luego Configuración del sitio web, luego Ubicación y Permitir.',
                       'Vuelve aquí y toca Intentar otra vez.'],
-          tryAgain: 'Intentar otra vez', withoutIn: 'Marcar entrada sin ubicación', withoutOut: 'Marcar salida sin ubicación', withoutSw: 'Cambiar sin ubicación' }
+          tryAgain: 'Intentar otra vez', withoutIn: 'Marcar entrada sin ubicación', withoutOut: 'Marcar salida sin ubicación', withoutSw: 'Cambiar sin ubicación',
+          addPhotos: 'Agregar fotos', photoUp: 'Subiendo foto {i} de {n}… no cierres esta página.',
+          photoOk: '✓ {n} foto(s) subidas al trabajo {job}.', photoPart: '{ok} subidas, {fail} NO subidas. Intenta esas otra vez.',
+          photoFail: 'Fotos NO subidas. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron las primeras {n}. Agrega las demás después.',
+          punchTitle: 'Lista de pendientes', plNone: 'No hay lista de pendientes abierta para este trabajo.', plClockIn: 'Marca entrada para ver tu lista de pendientes y agregar fotos.',
+          plLoading: 'Cargando lista…', plErr: 'No se pudo cargar la lista. Recarga la página para intentar otra vez.',
+          plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas' }
   };
   function lang() { try { return localStorage.getItem(LANG_KEY) === 'es' ? 'es' : 'en'; } catch (e) { return window._lang || 'en'; } }
   function setLang(l) { window._lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
@@ -307,10 +351,14 @@
     h += '<div class="total">' + esc(t('todayTotal')) + ': <b id="todayTotal">' + fmtH(liveTotal()) + ' ' + esc(t('hours')) + '</b></div></div>';
     if (o) {
       h += '<button type="button" class="btn out" id="btnOut">' + esc(t('clockOut')) + '</button>' +
-           '<button type="button" class="btn sw" id="btnSwitch">' + esc(t('switchJob')) + '</button>';
+           '<button type="button" class="btn sw" id="btnSwitch">' + esc(t('switchJob')) + '</button>' +
+           '<button type="button" class="btn sw" id="btnPhotos"' + (PHOTO.busy ? ' disabled' : '') + '>&#128247; ' + esc(t('addPhotos')) + ': ' + esc(o.jobNumber) + '</button>' +
+           '<div class="pmsg ' + esc(PHOTO.cls) + '" id="photoMsg"' + (PHOTO.msg ? '' : ' style="display:none"') + '>' + esc(PHOTO.msg) + '</div>' +
+           '<div id="punchWrap">' + plHtml() + '</div>';
     } else {
       h += '<div class="card"><h2>' + esc(t('pickJob')) + '</h2>' + picker() + '</div>' +
-           '<button type="button" class="btn in" id="btnIn"' + (picked ? '' : ' disabled') + '>' + inLabel() + '</button>';
+           '<button type="button" class="btn in" id="btnIn"' + (picked ? '' : ' disabled') + '>' + inLabel() + '</button>' +
+           '<div class="hint" id="plHint">' + esc(t('plClockIn')) + '</div>';
     }
     h += '<div class="card"><h2>' + esc(t('today')) + '</h2>';
     var sh = STATE.shifts || [];
@@ -476,7 +524,193 @@
     if (wasSwitch) { picked = null; manualPick = false; window._q = ''; }
   }
 
-  function setState(s) { STATE = s; STATE._receivedAt = Date.now(); render(); }
+  function setState(s) {
+    STATE = s; STATE._receivedAt = Date.now();
+    if (!s.open && !PHOTO.busy) { PHOTO.msg = ''; PHOTO.cls = ''; PHOTO.job = ''; }
+    if (s.open && PHOTO.job && PHOTO.job !== s.open.jobNumber && !PHOTO.busy) { PHOTO.msg = ''; PHOTO.cls = ''; PHOTO.job = ''; }
+    plSync();
+    render();
+  }
+
+  // ---------------- punch list for the clocked-in job (v2026-11-27.1) ----------------
+  // The clock API says WHICH lists (open.punchLists, file ids). Everything else is the
+  // punch list web app, called exactly as the WhatsApp page calls it, with the name from
+  // this clock link, so who checked an item is recorded without asking.
+  var CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var PL = { key: '', ids: [], lists: {}, loading: false, failed: {} }, plSaving = 0;
+  function plFetch(url, opts) { opts.credentials = 'omit'; opts.redirect = 'follow'; return fetch(url, opts).then(done); }
+  function plGet(id) { return plFetch(PUNCH_API + '?api=1&id=' + encodeURIComponent(id) + '&_=' + Date.now(), {}); }
+  function plPost(body) { return plFetch(PUNCH_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }); }
+  // Called on every fresh clock state: a new job (or a changed set of lists) starts over; the same job just refreshes.
+  function plSync() {
+    var o = STATE && STATE.open, ids = o && o.punchLists || [];
+    if (!o) { PL = { key: '', ids: [], lists: {}, loading: false, failed: {} }; return; }
+    var key = o.jobNumber + '|' + ids.join(',');
+    if (key !== PL.key) PL = { key: key, ids: ids.slice(), lists: {}, loading: ids.length > 0, failed: {} };
+    if (!ids.length) return;
+    var mine = PL;
+    Promise.all(ids.map(function(id) {
+      return plGet(id).then(function(s) { return { id: id, s: s }; }, function() { return { id: id, s: null }; });
+    })).then(function(rs) {
+      if (PL !== mine) return;
+      mine.loading = false;
+      if (plSaving) return;                    // a save's reply brings fresher state
+      rs.forEach(function(r) { if (r.s) { mine.lists[r.id] = r.s; delete mine.failed[r.id]; } else if (!mine.lists[r.id]) mine.failed[r.id] = true; });
+      plRender();
+    });
+  }
+  function plRender() { var w = $('punchWrap'); if (w) w.innerHTML = plHtml(); }
+  function plHtml() {
+    var o = STATE && STATE.open;
+    if (!o) return '';
+    var head = '<h2>' + esc(t('punchTitle')) + '</h2>', h = '', shown = 0;
+    PL.ids.forEach(function(id) {
+      var s = PL.lists[id];
+      if (!s) {
+        shown++;
+        h += '<div class="card pl">' + head + '<div class="empty" style="padding:4px 0">' + esc(t(PL.failed[id] ? 'plErr' : 'plLoading')) + '</div></div>';
+        return;
+      }
+      if (s.notFound || s.closed || s.type === 'reminder') return;
+      shown++;
+      var items = s.items || [];
+      var open = items.filter(function(i) { return !i.checked; }), fin = items.filter(function(i) { return i.checked; });
+      h += '<div class="card pl" data-list="' + esc(id) + '">' + head + '<div class="pjob">' + esc(s.job) + '</div>' +
+           '<div class="meta plcount">' + esc(t('plCount').replace('{a}', fin.length).replace('{b}', items.length)) + '</div>';
+      if (!items.length) h += '<div class="empty" style="padding:4px 0">' + esc(t('plNoItems')) + '</div>';
+      open.forEach(function(i) { h += plRow(id, i); });
+      if (fin.length) h += '<div class="pl-sec">' + esc(t('plDoneSec')) + '</div>';
+      fin.forEach(function(i) { h += plRow(id, i); });
+      h += '<div class="meta" style="margin-top:8px">' + esc(t('plAs')) + ': <b>' + esc(STATE.name) + '</b></div></div>';
+    });
+    if (!shown) h = '<div class="card pl" id="plNone">' + head + '<div class="empty" style="padding:4px 0">' + esc(t(o.punchError ? 'plErr' : 'plNone')) + '</div></div>';
+    return h;
+  }
+  // One item: English, Spanish under it, location, problem note, who checked it, Problem button. Same as the punch list page.
+  function plRow(id, i) {
+    return '<div class="pl-item' + (i.checked ? ' done' : '') + (i.problem ? ' flag' : '') + (i._pending ? ' pending' : '') + '" data-pl="' + esc(id) + '" data-n="' + i.n + '"><label>' +
+      '<input type="checkbox" data-pl="' + esc(id) + '" data-n="' + i.n + '"' + (i.checked ? ' checked' : '') + '>' +
+      '<span class="pl-box">' + CHECK + '</span><span class="pl-text"><div class="pl-t">' + esc(i.text) + '</div>' +
+      (i.es && i.es.toLowerCase() !== i.text.toLowerCase() ? '<div class="pl-es">' + esc(i.es) + '</div>' : '') +
+      (i.location ? '<div class="pl-loc">' + esc(i.location) + '</div>' : '') +
+      (i.problem ? '<div class="pl-flagnote">&#9873; ' + esc(i.problem.note) + (i.problem.by ? ' (' + esc(i.problem.by) + ')' : '') + '</div>' : '') +
+      (i.checked && i.by ? '<div class="pl-by">✓ ' + esc(i.by) + '</div>' : '') +
+      '</span></label>' +
+      (!i.checked ? '<div class="pl-row2"><button type="button" class="pl-prob" data-prob-pl="' + esc(id) + '" data-prob-n="' + i.n + '">&#9873; Problem / Problema</button></div>' : '') +
+      '</div>';
+  }
+  function plItem(id, n) { var s = PL.lists[id]; return s && (s.items || []).filter(function(i) { return i.n === n; })[0] || null; }
+  function plTap(id, n, checked) {
+    var mine = PL, item = plItem(id, n);
+    if (!item) return;
+    var before = { checked: item.checked, by: item.by, problem: item.problem };
+    item.checked = checked; item.by = checked ? STATE.name : ''; item._pending = true;
+    if (checked) item.problem = null;
+    plRender();
+    plSaving++;
+    plPost({ id: id, n: n, checked: checked, name: STATE.name }).then(function(s) {
+      plSaving--;
+      if (s && s.items) mine.lists[id] = s; else if (s && s.closed) mine.lists[id] = s; else item._pending = false;
+      if (PL === mine) plRender();
+      toast(t('saved'));
+    }).catch(function() {
+      plSaving--;
+      item.checked = before.checked; item.by = before.by; item.problem = before.problem; item._pending = false;
+      if (PL === mine) plRender();
+      toast(t('notSaved'), true);
+    });
+  }
+  function plProblem(id, n) {
+    var mine = PL, item = plItem(id, n);
+    if (!item) return;
+    $('sheet').innerHTML = '<div id="probSheet"><h2>&#9873; Problem / Problema</h2><div class="meta">' + esc(item.text) + '</div>' +
+      '<label class="fl"><textarea id="probInput" rows="3" maxlength="300" placeholder="What&#39;s wrong? / ¿Cuál es el problema?"></textarea></label>' +
+      '<button type="button" class="btn in" id="probSave">Save / Guardar</button>' +
+      '<button type="button" class="btn grey" id="probCancel">Cancel / Cancelar</button></div>';
+    $('modal').className = 'modal show';
+    setTimeout(function() { var x = $('probInput'); if (x) x.focus(); }, 50);
+    $('probCancel').onclick = closeSheet;
+    $('probSave').onclick = function() {
+      var note = $('probInput').value.trim();
+      if (!note) { $('probInput').focus(); return; }
+      var btn = this; btn.disabled = true; btn.textContent = t('saving');
+      plSaving++;
+      plPost({ action: 'problem', id: id, n: n, note: note, name: STATE.name }).then(function(s) {
+        plSaving--;
+        if (s && (s.items || s.closed)) mine.lists[id] = s;
+        closeSheet();
+        if (PL === mine) plRender();
+        toast(t('saved'));
+      }).catch(function() {
+        plSaving--; btn.disabled = false; btn.textContent = 'Save / Guardar';
+        toast(t('notSaved'), true);
+      });
+    };
+  }
+
+  // ---------------- job photos (v2026-11-27.1) ----------------
+  // Phone camera or gallery, several at once. Each photo is shrunk on the phone, then sent
+  // to the clock script, which puts it in the JobTread Files of the job the person is
+  // clocked into. The JobTread key stays in the script; this page never sees it.
+  var PHOTO = { busy: false, msg: '', cls: '', job: '' };
+  var PHOTO_EDGE = 1600, PHOTO_QUALITY = 0.82, PHOTO_BATCH = 20, PHOTO_RAW_MAX = 5 * 1024 * 1024;
+  function photoMsg(msg, cls) {
+    PHOTO.msg = msg; PHOTO.cls = cls || '';
+    var el = $('photoMsg');
+    if (el) { el.textContent = msg; el.className = 'pmsg ' + PHOTO.cls; el.style.display = msg ? '' : 'none'; }
+    var b = $('btnPhotos'); if (b) b.disabled = PHOTO.busy;
+  }
+  // Resolves {data: base64, type}. Shrinks to 1600 px on the long side, JPEG. A photo the
+  // browser cannot draw (rare) goes as it is when it is small enough, else it fails.
+  function photoShrink(file) {
+    return new Promise(function(resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function() {
+        try {
+          var w = img.naturalWidth, h = img.naturalHeight, m = Math.max(w, h), k = m > PHOTO_EDGE ? PHOTO_EDGE / m : 1;
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          var d = c.toDataURL('image/jpeg', PHOTO_QUALITY);
+          if (d.indexOf('data:image/jpeg') !== 0) return reject(new Error('no jpeg'));
+          resolve({ data: d.slice(d.indexOf(',') + 1), type: 'image/jpeg' });
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function() {
+        URL.revokeObjectURL(url);
+        if (file.size > PHOTO_RAW_MAX || !/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type)) return reject(new Error('cannot read'));
+        var fr = new FileReader();
+        fr.onload = function() { var d = String(fr.result || ''); resolve({ data: d.slice(d.indexOf(',') + 1), type: file.type }); };
+        fr.onerror = function() { reject(new Error('cannot read')); };
+        fr.readAsDataURL(file);
+      };
+      img.src = url;
+    });
+  }
+  function photosPicked(files) {
+    if (PHOTO.busy || !STATE || !STATE.open || !files.length) return;
+    var job = STATE.open.jobNumber, over = files.length > PHOTO_BATCH;
+    if (over) files = files.slice(0, PHOTO_BATCH);
+    var n = files.length, i = 0, ok = 0, fail = 0;
+    PHOTO.busy = true; PHOTO.job = job;
+    function next() {
+      if (i >= n) {
+        PHOTO.busy = false;
+        var tail = over ? ' ' + t('photoMax').replace('{n}', PHOTO_BATCH) : '';
+        if (!fail) photoMsg(t('photoOk').replace('{n}', ok).replace('{job}', job) + tail, 'ok');
+        else if (!ok) photoMsg(t('photoFail'), 'err');
+        else photoMsg(t('photoPart').replace('{ok}', ok).replace('{fail}', fail) + tail, 'err');
+        return;
+      }
+      var idx = ++i;
+      photoMsg(t('photoUp').replace('{i}', idx).replace('{n}', n), '');
+      photoShrink(files[idx - 1]).then(function(p) {
+        return apiPost({ action: 'photo', data: p.data, type: p.type, i: idx, n: n });
+      }).then(function(r) { if (r && r.ok) ok++; else fail++; next(); }, function() { fail++; next(); });
+    }
+    next();
+  }
 
   // ---------------- events ----------------
   document.addEventListener('click', function(ev) {
@@ -495,6 +729,19 @@
     if (b.id === 'btnOut') { openOutSheet(); return; }
     if (b.id === 'btnSwitch') { openSwitchSheet(); return; }
     if (b.id === 'locBanner') { locSheet(null, GEO === 'denied' ? 1 : 2); return; }
+    if (b.id === 'btnPhotos') { if (!PHOTO.busy && STATE && STATE.open) $('photoInput').click(); return; }
+    if (b.hasAttribute('data-prob-pl')) { plProblem(b.getAttribute('data-prob-pl'), Number(b.getAttribute('data-prob-n'))); return; }
+  });
+  document.addEventListener('change', function(ev) {
+    var el = ev.target;
+    if (!el) return;
+    if (el.id === 'photoInput') {
+      var files = Array.prototype.slice.call(el.files || []);   // copy before clearing, so the same photo can be picked again
+      el.value = '';
+      photosPicked(files);
+      return;
+    }
+    if (el.type === 'checkbox' && el.hasAttribute('data-pl')) plTap(el.getAttribute('data-pl'), Number(el.getAttribute('data-n')), el.checked);
   });
   document.addEventListener('input', function(ev) {
     if (ev.target && ev.target.id === 'jobSearch') { window._q = ev.target.value; refreshLists(); }

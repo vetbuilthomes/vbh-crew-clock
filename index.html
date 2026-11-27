@@ -6,6 +6,14 @@
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <title>VBH Crew Clock</title>
+<!-- Home screen shortcut (v2026-11-27): icon and short name. No web app manifest on purpose:
+     a plain shortcut saves the whole link, including the person's ?t= or ?m= token. -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="VBH Clock" id="appTitle">
+<meta name="application-name" content="VBH Clock">
+<meta name="theme-color" content="#1f3a5f">
 <!--
   VBH crew clock-in page. Source: Claude Projects/crew-clock/web/index.html,
   published to GitHub Pages (repo vetbuilthomes/vbh-crew-clock) by
@@ -80,6 +88,11 @@
   .pmsg { margin: 10px 0 0; padding: 12px 14px; border-radius: 10px; font-size: 17px; background: #eef2f7; color: #1f3a5f; }
   .pmsg.ok { background: #e3efe4; color: #1b5e20; font-weight: bold; }
   .pmsg.err { background: #fdecea; color: #b3261e; font-weight: bold; }
+  .savebox { border: 3px solid #1f3a5f; }
+  .savebox h3 { font-size: 16px; margin: 12px 0 4px; }
+  .savebox ol { margin: 0; padding-left: 24px; font-size: 16px; line-height: 1.4; }
+  .savebox ol li { margin: 4px 0; }
+  .savebox p { font-size: 16px; margin: 6px 0; }
   .hint { text-align: center; color: #666; font-size: 16px; margin: 16px 8px 6px; }
   .pl .pjob { font-size: 19px; font-weight: bold; line-height: 1.3; word-wrap: break-word; }
   .pl-sec { font-size: 14px; color: #555; margin: 14px 0 2px; text-transform: uppercase; letter-spacing: .04em; }
@@ -183,7 +196,13 @@
           photoFail: 'Photos NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
           punchTitle: 'Punch list', plNone: 'No open punch list for this job.', plClockIn: 'Clock in to see your punch list and add photos.',
           plLoading: 'Loading punch list…', plErr: 'The punch list could not load. Reload the page to try again.',
-          plCount: '{a} of {b} done', plDoneSec: 'Done', plAs: 'Checking as', plNoItems: 'No items' },
+          plCount: '{a} of {b} done', plDoneSec: 'Done', plAs: 'Checking as', plNoItems: 'No items',
+          saveTitle: 'Save this page to your phone',
+          saveWhy: 'This link is your personal time clock. Save it once and open it from the icon every day.',
+          saveWhyMgr: 'This link is your personal page for approving crew hours. Save it once and open it from the icon.',
+          saveAndroid: ['Tap the three dots at the top right of Chrome.', 'Tap "Add to Home screen", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
+          saveIphone: ['Tap the Share button in Safari (a square with an arrow pointing up).', 'Scroll down and tap "Add to Home Screen", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
+          saveNote: 'Do not share this link. It is only for you.', saveDone: 'I saved it' },
     es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
           clockedIn: 'Marcado ENTRADA', clockedOut: 'Marcado SALIDA', since: 'desde', onJob: 'en', hoursSoFar: 'h hasta ahora',
           today: 'Hoy', todayTotal: 'Total de hoy', hours: 'h', noShifts: 'Sin turnos todavía hoy.',
@@ -210,7 +229,12 @@
           photoFail: 'Fotos NO subidas. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron las primeras {n}. Agrega las demás después.',
           punchTitle: 'Lista de pendientes', plNone: 'No hay lista de pendientes abierta para este trabajo.', plClockIn: 'Marca entrada para ver tu lista de pendientes y agregar fotos.',
           plLoading: 'Cargando lista…', plErr: 'No se pudo cargar la lista. Recarga la página para intentar otra vez.',
-          plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas' }
+          plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas',
+          saveTitle: 'Guarda esta página en tu teléfono',
+          saveWhy: 'Este enlace es tu reloj personal. Guárdalo una vez y ábrelo desde el ícono todos los días.',
+          saveAndroid: ['Toca los tres puntos arriba a la derecha en Chrome.', 'Toca "Agregar a la pantalla principal" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla principal.'],
+          saveIphone: ['Toca el botón Compartir en Safari (un cuadro con una flecha hacia arriba).', 'Baja y toca "Agregar a inicio" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla de inicio.'],
+          saveNote: 'No compartas este enlace. Es solo para ti.', saveDone: 'Ya lo guardé' }
   };
   function lang() { try { return localStorage.getItem(LANG_KEY) === 'es' ? 'es' : 'en'; } catch (e) { return window._lang || 'en'; } }
   function setLang(l) { window._lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
@@ -240,6 +264,23 @@
     el.textContent = msg; el.className = 'toast show' + (err ? ' err' : '');
     clearTimeout(toast._t);
     toast._t = setTimeout(function() { el.className = 'toast' + (err ? ' err' : ''); }, err ? 3500 : 1500);
+  }
+
+  // ---------------- save to home screen (v2026-11-27) ----------------
+  // A box at the top until the person taps "I saved it" (remembered on the phone). Steps for
+  // the phone in hand (Android or iPhone; both when it cannot tell). key: one flag per page kind.
+  function savedFlag(key) { try { return localStorage.getItem(key) === '1'; } catch (e) { return !!window['_' + key]; } }
+  function setSavedFlag(key) { window['_' + key] = true; try { localStorage.setItem(key, '1'); } catch (e) {} }
+  function saveBox(key, l, btnId, whyKey) {
+    var alone = false;
+    try { alone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; } catch (e) {}
+    if (alone || savedFlag(key)) return '';
+    var ua = navigator.userAgent || '', ios = /iPhone|iPad|iPod/i.test(ua), andr = /Android/i.test(ua);
+    function list(a) { return '<ol>' + a.map(function(x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>'; }
+    var h = '<div class="card savebox" id="saveBox"><h2>&#128204; ' + esc(t('saveTitle', l)) + '</h2><p>' + esc(t(whyKey || 'saveWhy', l)) + '</p>';
+    if (!ios) h += '<h3>' + esc(t('locAndroidH', l)) + '</h3>' + list(t('saveAndroid', l));
+    if (!andr) h += '<h3>' + esc(t('locIphoneH', l)) + '</h3>' + list(t('saveIphone', l));
+    return h + '<p><b>' + esc(t('saveNote', l)) + '</b></p><button type="button" class="btn grey" id="' + btnId + '">' + esc(t('saveDone', l)) + '</button></div>';
   }
 
   // ---------------- location ----------------
@@ -337,7 +378,7 @@
       return;
     }
     if (pickMode === 'in') applyAuto();
-    var o = STATE.open, h = header() + '<main>';
+    var o = STATE.open, h = header() + '<main>' + saveBox('vbhClockSaved', lang(), 'saveDone');
     if (o && o.longShift) h += '<div class="banner" id="longShift">&#9888; ' + esc(t('longShift').replace('{h}', STATE.longShiftHours)) + '</div>';
     h += '<button type="button" class="banner locb" id="locBanner"' + (GEO === 'denied' || GEO === 'off' ? '' : ' style="display:none"') + '>&#9888; ' + esc(t('locBanner')) + '</button>';
     h += '<div class="card">';
@@ -730,6 +771,7 @@
     if (b.id === 'btnOut') { openOutSheet(); return; }
     if (b.id === 'btnSwitch') { openSwitchSheet(); return; }
     if (b.id === 'locBanner') { locSheet(null, GEO === 'denied' ? 1 : 2); return; }
+    if (b.id === 'saveDone') { setSavedFlag('vbhClockSaved'); render(); return; }
     if (b.id === 'btnPhotos') { if (!PHOTO.busy && STATE && STATE.open) $('photoInput').click(); return; }
     if (b.hasAttribute('data-prob-pl')) { plProblem(b.getAttribute('data-prob-pl'), Number(b.getAttribute('data-prob-n'))); return; }
   });
@@ -796,7 +838,8 @@
       document.title = 'VBH Crew Hours';
       if (V.invalid) { $('app').innerHTML = '<header><h1>VBH Crew Hours</h1></header><div class="msg" id="invalid">Link not valid.</div>'; return; }
       var w = V.weeks[WK];
-      var h = '<header><div style="flex:1"><h1>VBH Crew Hours</h1><div class="sub">' + esc(V.manager) + '</div></div></header><main>';
+      var h = '<header><div style="flex:1"><h1>VBH Crew Hours</h1><div class="sub">' + esc(V.manager) + '</div></div></header><main>' +
+        saveBox('vbhMgrSaved', 'en', 'mSaveDone', 'saveWhyMgr');
       h += '<div class="tabs">' + V.weeks.map(function(x, i) {
         return '<button type="button" class="tab' + (i === WK ? ' on' : '') + '" data-wk="' + i + '">' + esc(x.label) + '<br><small>' + esc(x.title) + '</small></button>'; }).join('') + '</div>';
       if (!w.people.length) h += '<div class="card empty">No crew members list you as their approver.</div>';
@@ -903,6 +946,7 @@
     document.addEventListener('click', function(ev) {
       var b = ev.target.closest && ev.target.closest('button');
       if (!b || mbusy || !V) return;
+      if (b.id === 'mSaveDone') { setSavedFlag('vbhMgrSaved'); mrender(); return; }
       if (b.hasAttribute('data-wk')) { WK = Number(b.getAttribute('data-wk')); mrender(); return; }
       if (b.hasAttribute('data-approve')) {
         var an = Number(b.getAttribute('data-approve')), ax = findRow(an);
@@ -926,6 +970,7 @@
       if (b.hasAttribute('data-close')) { closeSheetFor(b.getAttribute('data-close')); return; }
     });
     window.MANAGER_MODE = true;
+    var at = $('appTitle'); if (at) at.setAttribute('content', 'VBH Hours');   // the home screen name for a manager
     mget().then(function(v) { V = v; mrender(); })
       .catch(function() { $('app').innerHTML = '<div class="msg">Could not load. Check your signal and reload.</div>'; });
   })();

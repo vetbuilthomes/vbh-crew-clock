@@ -219,6 +219,7 @@
           photoOk: '✓ {n} uploaded to job {job}.', photoPart: '{ok} uploaded, {fail} NOT uploaded. Try those again.',
           photoFail: 'NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
           photoBig: 'A video was too big (limit 500 MB).',
+          toHours: 'Supervisor page: approve crew hours',
           winsTitle: 'Daily WINS video. Say these four things:',
           wins: [['W', 'What got done today?'], ['I', 'Issues: any issues that came up today?'],
                  ['N', 'Next steps: what are you going to accomplish tomorrow?'], ['S', 'Schedule: are you still on schedule?']],
@@ -256,6 +257,7 @@
           photoOk: '✓ {n} subidos al trabajo {job}.', photoPart: '{ok} subidos, {fail} NO subidos. Intenta esos otra vez.',
           photoFail: 'NO subido. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron los primeros {n}. Agrega los demás después.',
           photoBig: 'Un video era demasiado grande (límite 500 MB).',
+          toHours: 'Página de supervisor: aprobar horas',
           winsTitle: 'Video diario WINS. Di estas cuatro cosas:',
           wins: [['W', '¿Qué se hizo hoy?'], ['I', 'Problemas: ¿hubo algún problema hoy?'],
                  ['N', 'Siguientes pasos: ¿qué vas a lograr mañana?'], ['S', 'Horario: ¿sigues a tiempo?']],
@@ -443,7 +445,10 @@
       h += '<div class="shift"><div><b>' + esc(s.jobNumber) + '</b> ' + esc(s.jobName) + '<br><span class="meta">' + esc(s.inTime) + ' – ' + esc(s.outTime) + '</span>' +
         (s.flags ? '<br><span class="flag">' + esc(flagsText(s.flags)) + '</span>' : '') + '</div><div><b>' + fmtH(s.hours) + ' ' + esc(t('hours')) + '</b></div></div>';
     });
-    h += '</div><div class="foot">' + esc(STATE.version || '') + '</div></main>';
+    h += '</div>';
+    // A phone that also holds a manager link (a supervisor who clocks in too): one app, a way across.
+    if (kept('vbhMgrToken')) h += '<button type="button" class="btn grey" id="toHours">' + esc(t('toHours')) + '</button>';
+    h += '<div class="foot">' + esc(STATE.version || '') + '</div></main>';
     $('app').innerHTML = h;
     var inp = $('jobSearch'); if (inp && window._q) { inp.value = window._q; }
     clearInterval(tick);
@@ -840,6 +845,8 @@
     if (b.id === 'btnSwitch') { openSwitchSheet(); return; }
     if (b.id === 'locBanner') { locSheet(null, GEO === 'denied' ? 1 : 2); return; }
     if (b.id === 'saveDone') { setSavedFlag('vbhClockSaved'); render(); return; }
+    if (b.id === 'toHours') { location.href = './?app=hours'; return; }
+    if (b.id === 'toClock') { location.href = './?app=clock'; return; }
     if (b.id === 'btnPhotos') { if (!PHOTO.busy && STATE && STATE.open) $('photoInput').click(); return; }
     if (b.hasAttribute('data-prob-pl')) { plProblem(b.getAttribute('data-prob-pl'), Number(b.getAttribute('data-prob-n'))); return; }
   });
@@ -937,6 +944,7 @@
         if (!p.rows.length && !p.open.length) h += '<div class="empty" style="padding:6px 0">No hours this week.</div>';
         h += '</div>';
       });
+      if (kept('vbhClockToken')) h += '<button type="button" class="btn grey" id="toClock">My time clock</button>';
       h += '<div class="foot">' + esc(V.version || '') + '</div></main>';
       $('app').innerHTML = h;
     }

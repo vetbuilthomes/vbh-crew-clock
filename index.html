@@ -12,7 +12,7 @@
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="VBH Clock" id="appTitle">
-<meta name="application-name" content="VBH Clock">
+<meta name="application-name" content="VBH Clock" id="appName">
 <meta name="theme-color" content="#1f3a5f">
 <!--
   VBH crew clock-in page. Source: Claude Projects/crew-clock/web/index.html,
@@ -200,7 +200,7 @@
           saveTitle: 'Save this page to your phone',
           saveWhy: 'This link is your personal time clock. Save it once and open it from the icon every day.',
           saveWhyMgr: 'This link is your personal page for approving crew hours. Save it once and open it from the icon.',
-          saveAndroid: ['Tap the three dots at the top right of Chrome.', 'Tap "Add to Home screen", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
+          saveAndroid: ['Tap the three dots at the top right of Chrome.', 'Tap "Add to Home screen". On some phones it says "Install and create shortcut": tap that, then "Create shortcut".', 'Tap Add.', 'From now on, open it from the VBH icon on your home screen.'],
           saveIphone: ['Tap the Share button in Safari (a square with an arrow pointing up).', 'Scroll down and tap "Add to Home Screen", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
           saveNote: 'Do not share this link. It is only for you.', saveDone: 'I saved it' },
     es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
@@ -232,7 +232,7 @@
           plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas',
           saveTitle: 'Guarda esta página en tu teléfono',
           saveWhy: 'Este enlace es tu reloj personal. Guárdalo una vez y ábrelo desde el ícono todos los días.',
-          saveAndroid: ['Toca los tres puntos arriba a la derecha en Chrome.', 'Toca "Agregar a la pantalla principal" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla principal.'],
+          saveAndroid: ['Toca los tres puntos arriba a la derecha en Chrome.', 'Toca "Agregar a la pantalla principal". En algunos teléfonos dice "Instalar y crear acceso directo": toca eso y luego "Crear acceso directo".', 'Toca Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla principal.'],
           saveIphone: ['Toca el botón Compartir en Safari (un cuadro con una flecha hacia arriba).', 'Baja y toca "Agregar a inicio" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla de inicio.'],
           saveNote: 'No compartas este enlace. Es solo para ti.', saveDone: 'Ya lo guardé' }
   };
@@ -970,7 +970,9 @@
       if (b.hasAttribute('data-close')) { closeSheetFor(b.getAttribute('data-close')); return; }
     });
     window.MANAGER_MODE = true;
-    var at = $('appTitle'); if (at) at.setAttribute('content', 'VBH Hours');   // the home screen name for a manager
+    // The home screen name for a manager. Android Chrome takes it from application-name (it
+    // offered "VBH Clock" on Mark's phone when only the Apple one was changed), iPhone from the Apple one.
+    ['appTitle', 'appName'].forEach(function(id) { var el = $(id); if (el) el.setAttribute('content', 'VBH Hours'); });
     mget().then(function(v) { V = v; mrender(); })
       .catch(function() { $('app').innerHTML = '<div class="msg">Could not load. Check your signal and reload.</div>'; });
   })();

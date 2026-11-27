@@ -6,8 +6,15 @@
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <title>VBH Crew Clock</title>
-<!-- Home screen shortcut (v2026-11-27): icon and short name. No web app manifest on purpose:
-     a plain shortcut saves the whole link, including the person's ?t= or ?m= token. -->
+<!-- Home screen app (v2026-11-27.3): icon, short name, opens full screen.
+     Android: a web app manifest (manifest-clock.json / manifest-hours.json, linked by the script
+     below) makes it installable; the app starts at ?app=clock or ?app=hours and the person's
+     token is read from this phone's storage, where the first visit with ?t= / ?m= saved it.
+     iPhone: no manifest (a home screen app there has its own empty storage); Add to Home Screen
+     saves the whole link with its token, and the two "capable" tags open it full screen. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -149,7 +156,7 @@
 <div class="toast" id="toast"></div>
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 <!-- Kept outside #app: the page is redrawn when it comes back from the camera, and the picker must survive that. -->
-<input type="file" id="photoInput" accept="image/*" multiple style="display:none">
+<input type="file" id="photoInput" accept="image/*,video/*" multiple style="display:none">
 <script>
   // Apps Script deployment (vetbuilthomes@gmail.com, "VBH Crew Clock"). Redeployed in
   // place with clasp deploy -i, so this URL never changes. Set once by publish-page.sh's
@@ -159,7 +166,22 @@
   // calls as the WhatsApp punch list page: read a list, save a tap, save a problem.
   var PUNCH_API = 'https://script.google.com/macros/s/AKfycbwh6gVmTaVMuJr8UeyB1oqbRcIyYsr1eTNZFXousbBRlcHvZzzsUBVZvnguHthBi2XQ/exec';
   var Q = new URLSearchParams(location.search);
+  // Who this is. A link carries the token (?t= crew, ?m= manager) and the phone remembers it.
+  // The installed Android app opens at ?app=clock or ?app=hours with no token and uses the remembered one.
+  function kept(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function keep(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var APP = (Q.get('app') || '').trim();
+  var MTOK = (Q.get('m') || '').trim();
+  if (MTOK) keep('vbhMgrToken', MTOK); else if (APP === 'hours') MTOK = kept('vbhMgrToken');
   var T = (Q.get('t') || '').trim();
+  if (T) keep('vbhClockToken', T); else if (APP === 'clock') T = kept('vbhClockToken');
+  var IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!IOS) {
+    var ml = document.createElement('link');
+    ml.rel = 'manifest'; ml.href = MTOK ? 'manifest-hours.json' : 'manifest-clock.json';
+    document.head.appendChild(ml);
+    if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(function() {}); } catch (e) {} }
+  }
   var LANG_KEY = 'vbhClockLang';
   var STATE = null, busy = false, picked = null, pickMode = 'in', tick = null;
   // Location (v2026-11-26.2). FIX is the latest position from the phone; GEO is
@@ -191,16 +213,17 @@
                       'Back in Safari, tap aA to the left of the web address, then Website Settings, then Location, then Allow.',
                       'Come back here and tap Try again.'],
           tryAgain: 'Try again', withoutIn: 'Clock in without location', withoutOut: 'Clock out without location', withoutSw: 'Switch without location',
-          addPhotos: 'Add photos', photoUp: 'Uploading photo {i} of {n}… keep this page open.',
-          photoOk: '✓ {n} photo(s) uploaded to job {job}.', photoPart: '{ok} uploaded, {fail} NOT uploaded. Try those again.',
-          photoFail: 'Photos NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
+          addPhotos: 'Add photo / video', photoUp: 'Uploading {i} of {n}{pct}… keep this page open.',
+          photoOk: '✓ {n} uploaded to job {job}.', photoPart: '{ok} uploaded, {fail} NOT uploaded. Try those again.',
+          photoFail: 'NOT uploaded. Check your signal and try again.', photoMax: 'Only the first {n} were taken. Add the rest next.',
+          photoBig: 'A video was too big (limit 500 MB).',
           punchTitle: 'Punch list', plNone: 'No open punch list for this job.', plClockIn: 'Clock in to see your punch list and add photos.',
           plLoading: 'Loading punch list…', plErr: 'The punch list could not load. Reload the page to try again.',
           plCount: '{a} of {b} done', plDoneSec: 'Done', plAs: 'Checking as', plNoItems: 'No items',
           saveTitle: 'Save this page to your phone',
           saveWhy: 'This link is your personal time clock. Save it once and open it from the icon every day.',
           saveWhyMgr: 'This link is your personal page for approving crew hours. Save it once and open it from the icon.',
-          saveAndroid: ['Tap the three dots at the top right of Chrome.', 'Tap "Add to Home screen". On some phones it says "Install and create shortcut": tap that, then "Create shortcut".', 'Tap Add.', 'From now on, open it from the VBH icon on your home screen.'],
+          saveAndroid: ['Tap the three dots at the top right of Chrome.', 'Tap "Add to Home screen". On some phones it says "Install and create shortcut".', 'Tap Install. If there is no Install, tap "Create shortcut", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
           saveIphone: ['Tap the Share button in Safari (a square with an arrow pointing up).', 'Scroll down and tap "Add to Home Screen", then Add.', 'From now on, open it from the VBH icon on your home screen.'],
           saveNote: 'Do not share this link. It is only for you.', saveDone: 'I saved it' },
     es: { title: 'Reloj de cuadrilla VBH', invalid: 'Enlace no válido, pregunta a tu PM', loadfail: 'No se pudo cargar. Revisa tu señal y recarga.',
@@ -224,15 +247,16 @@
                       'En Safari, toca aA a la izquierda de la dirección web, luego Configuración del sitio web, luego Ubicación y Permitir.',
                       'Vuelve aquí y toca Intentar otra vez.'],
           tryAgain: 'Intentar otra vez', withoutIn: 'Marcar entrada sin ubicación', withoutOut: 'Marcar salida sin ubicación', withoutSw: 'Cambiar sin ubicación',
-          addPhotos: 'Agregar fotos', photoUp: 'Subiendo foto {i} de {n}… no cierres esta página.',
-          photoOk: '✓ {n} foto(s) subidas al trabajo {job}.', photoPart: '{ok} subidas, {fail} NO subidas. Intenta esas otra vez.',
-          photoFail: 'Fotos NO subidas. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron las primeras {n}. Agrega las demás después.',
+          addPhotos: 'Agregar foto / video', photoUp: 'Subiendo {i} de {n}{pct}… no cierres esta página.',
+          photoOk: '✓ {n} subidos al trabajo {job}.', photoPart: '{ok} subidos, {fail} NO subidos. Intenta esos otra vez.',
+          photoFail: 'NO subido. Revisa tu señal e intenta otra vez.', photoMax: 'Solo se tomaron los primeros {n}. Agrega los demás después.',
+          photoBig: 'Un video era demasiado grande (límite 500 MB).',
           punchTitle: 'Lista de pendientes', plNone: 'No hay lista de pendientes abierta para este trabajo.', plClockIn: 'Marca entrada para ver tu lista de pendientes y agregar fotos.',
           plLoading: 'Cargando lista…', plErr: 'No se pudo cargar la lista. Recarga la página para intentar otra vez.',
           plCount: '{a} de {b} hechos', plDoneSec: 'Hecho', plAs: 'Marcando como', plNoItems: 'Sin tareas',
           saveTitle: 'Guarda esta página en tu teléfono',
           saveWhy: 'Este enlace es tu reloj personal. Guárdalo una vez y ábrelo desde el ícono todos los días.',
-          saveAndroid: ['Toca los tres puntos arriba a la derecha en Chrome.', 'Toca "Agregar a la pantalla principal". En algunos teléfonos dice "Instalar y crear acceso directo": toca eso y luego "Crear acceso directo".', 'Toca Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla principal.'],
+          saveAndroid: ['Toca los tres puntos arriba a la derecha en Chrome.', 'Toca "Agregar a la pantalla principal". En algunos teléfonos dice "Instalar y crear acceso directo".', 'Toca Instalar. Si no aparece Instalar, toca "Crear acceso directo" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla principal.'],
           saveIphone: ['Toca el botón Compartir en Safari (un cuadro con una flecha hacia arriba).', 'Baja y toca "Agregar a inicio" y luego Agregar.', 'Desde ahora, ábrelo desde el ícono VBH en tu pantalla de inicio.'],
           saveNote: 'No compartas este enlace. Es solo para ti.', saveDone: 'Ya lo guardé' }
   };
@@ -730,26 +754,60 @@
       img.src = url;
     });
   }
+  // Video (v2026-11-27.3). Too big to pass through the clock script, so: ask the script for a
+  // one-time upload address for this exact file, send the file straight to JobTread's storage
+  // (with a percent shown), then tell the script it is there so it files it on the job.
+  var VIDEO_MAX = 500 * 1024 * 1024;
+  var VIDEO_EXT = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', '3gp': 'video/3gpp', m4v: 'video/x-m4v' };
+  function videoType(file) {
+    var ty = String(file.type || '').toLowerCase().split(';')[0];
+    if (/^video\/(mp4|quicktime|webm|3gpp|x-m4v)$/.test(ty)) return ty;
+    var ext = (String(file.name || '').match(/\.([a-z0-9]+)$/i) || [])[1];
+    ext = ext ? ext.toLowerCase() : '';
+    if (VIDEO_EXT[ext]) return VIDEO_EXT[ext];
+    return /^video\//.test(ty) ? 'video/mp4' : '';
+  }
+  function isVideo(file) { return /^video\//i.test(file.type || '') || /\.(mp4|mov|webm|3gp|m4v)$/i.test(file.name || ''); }
+  function videoSend(file, idx, n, onPct) {
+    var ty = videoType(file);
+    if (!ty) return Promise.reject(new Error('type'));
+    if (file.size > VIDEO_MAX) return Promise.reject(new Error('big'));
+    return apiPost({ action: 'uploadStart', type: ty, size: file.size, i: idx, n: n }).then(function(s) {
+      if (!s || !s.ok) throw new Error(s && s.warn === 'too_big' ? 'big' : 'start');
+      return new Promise(function(resolve, reject) {
+        var x = new XMLHttpRequest();
+        x.open(s.method || 'PUT', s.url);
+        Object.keys(s.headers || {}).forEach(function(h) { x.setRequestHeader(h, s.headers[h]); });
+        x.upload.onprogress = function(e) { if (e.lengthComputable) onPct(Math.floor(100 * e.loaded / e.total)); };
+        x.onload = function() { if (x.status >= 200 && x.status < 300) resolve(s.uploadId); else reject(new Error('put ' + x.status)); };
+        x.onerror = x.onabort = x.ontimeout = function() { reject(new Error('put')); };
+        x.send(file);
+      });
+    }).then(function(uploadId) { return apiPost({ action: 'uploadDone', uploadId: uploadId }); });
+  }
   function photosPicked(files) {
     if (PHOTO.busy || !STATE || !STATE.open || !files.length) return;
     var job = STATE.open.jobNumber, over = files.length > PHOTO_BATCH;
     if (over) files = files.slice(0, PHOTO_BATCH);
-    var n = files.length, i = 0, ok = 0, fail = 0;
+    var n = files.length, i = 0, ok = 0, fail = 0, big = 0;
     PHOTO.busy = true; PHOTO.job = job;
     function next() {
       if (i >= n) {
         PHOTO.busy = false;
-        var tail = over ? ' ' + t('photoMax').replace('{n}', PHOTO_BATCH) : '';
+        var tail = (big ? ' ' + t('photoBig') : '') + (over ? ' ' + t('photoMax').replace('{n}', PHOTO_BATCH) : '');
         if (!fail) photoMsg(t('photoOk').replace('{n}', ok).replace('{job}', job) + tail, 'ok');
-        else if (!ok) photoMsg(t('photoFail'), 'err');
+        else if (!ok) photoMsg(t('photoFail') + tail, 'err');
         else photoMsg(t('photoPart').replace('{ok}', ok).replace('{fail}', fail) + tail, 'err');
         return;
       }
-      var idx = ++i;
-      photoMsg(t('photoUp').replace('{i}', idx).replace('{n}', n), '');
-      photoShrink(files[idx - 1]).then(function(p) {
-        return apiPost({ action: 'photo', data: p.data, type: p.type, i: idx, n: n });
-      }).then(function(r) { if (r && r.ok) ok++; else fail++; next(); }, function() { fail++; next(); });
+      var idx = ++i, f = files[idx - 1];
+      function say(pct) { photoMsg(t('photoUp').replace('{i}', idx).replace('{n}', n).replace('{pct}', pct == null ? '' : ' (' + pct + '%)'), ''); }
+      say(null);
+      var job1 = isVideo(f)
+        ? videoSend(f, idx, n, say)
+        : photoShrink(f).then(function(p) { return apiPost({ action: 'photo', data: p.data, type: p.type, i: idx, n: n }); });
+      job1.then(function(r) { if (r && r.ok) ok++; else fail++; next(); },
+                function(e) { if (e && e.message === 'big') big++; fail++; next(); });
     }
     next();
   }
@@ -804,7 +862,7 @@
     if (!MGR && document.visibilityState === 'visible' && STATE && !busy && $('modal').className === 'modal') load(false);
   });
   // ?m=<token> is the manager view (second script below); the crew clock does not start.
-  var MGR = !!(Q.get('m') || '').trim();
+  var MGR = !!MTOK;
   document.documentElement.lang = lang();
   if (!MGR) { if (T) startGeo(); load(true); }
 </script>
@@ -813,7 +871,7 @@
   // The crew whose Approver is this manager: this week and last week, fix a time
   // (reason required), approve a row or a whole week, unapprove before the bill posts.
   (function() {
-    var MT = (Q.get('m') || '').trim();
+    var MT = MTOK;
     if (!MT) return;
     var V = null, WK = 1, mbusy = false;    // WK 0 this week, 1 last week (the week to approve on Monday)
     function mget() {
